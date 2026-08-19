@@ -1,6 +1,9 @@
 """API routes for webhooks."""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Header
+import hmac
+import hashlib
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -9,6 +12,7 @@ from models import WebhookLog, MessageDirection, Message
 from lead_service import LeadService
 from ai_service import AIDecisionEngine
 from tasks import process_lead_for_followup
+from config import settings
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -17,11 +21,42 @@ router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 ai_engine = AIDecisionEngine()
 
 
+def verify_webhook_signature(
+    payload_bytes: bytes, signature: Optional[str]
+) -> bool:
+    """
+    Verify webhook signature using HMAC-SHA256.
+
+    Args:
+        payload_bytes: Raw webhook payload bytes
+        signature: X-Hostinger-Signature header value
+
+    Returns:
+        True if signature is valid
+    """
+    if not settings.hostinger_webhook_secret:
+        logger.warning("HOSTINGER_WEBHOOK_SECRET not configured, skipping verification")
+        return True
+
+    if not signature:
+        logger.warning("Webhook request missing X-Hostinger-Signature header")
+        return False
+
+    expected_signature = hmac.new(
+        settings.hostinger_webhook_secret.encode(),
+        payload_bytes,
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(signature, expected_signature)
+
+
 @router.post("/hostinger/message")
 async def handle_hostinger_webhook(
-    payload: dict,
+    request: Request,
     db: Session = Depends(get_db),
     x_webhook_id: str = Header(None),
+    x_hostinger_signature: str = Header(None),
 ):
     """
     Handle incoming email webhook from Hostinger.
@@ -39,6 +74,17 @@ async def handle_hostinger_webhook(
     }
     """
     try:
+        # Get raw request body for signature verification
+        body_bytes = await request.body()
+
+        # Verify webhook signature
+        if not verify_webhook_signature(body_bytes, x_hostinger_signature):
+            logger.error(f"Invalid webhook signature for webhook ID: {x_webhook_id}")
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+        # Parse JSON payload
+        import json
+        payload = json.loads(body_bytes)
         webhook_id = x_webhook_id or f"{datetime.utcnow().timestamp()}"
 
         # Check for duplicate webhook

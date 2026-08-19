@@ -14,8 +14,12 @@ class AIDecisionEngine:
     """AI service for making lead follow-up decisions."""
 
     def __init__(self):
+        if not settings.anthropic_api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
         self.client = Anthropic(api_key=settings.anthropic_api_key)
-        self.model = "claude-opus-4-1-20250805"
+        self.model = settings.anthropic_model
+        if not self.model:
+            raise ValueError("ANTHROPIC_MODEL environment variable not set")
 
     def _prepare_conversation_summary(
         self,

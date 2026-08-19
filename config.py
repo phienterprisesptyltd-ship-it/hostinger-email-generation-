@@ -12,9 +12,11 @@ class Settings(BaseSettings):
     hostinger_api_token: str
     hostinger_mailbox_resource_id: str
     hostinger_sender_address: str
+    hostinger_webhook_secret: Optional[str] = None
 
     # Anthropic
     anthropic_api_key: str
+    anthropic_model: str = "claude-opus-4-1-20250805"
 
     # App
     environment: str = "development"
