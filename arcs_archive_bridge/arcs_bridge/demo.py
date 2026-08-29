@@ -25,6 +25,7 @@ from .config import ArchiveConfig
 from .db import Archive
 from .errors import ArcsError, CredentialMaterialFound, InterpretationGateError
 from .ingest import ingest_path
+from .hashing import sha256_bytes
 from .jsonspans import array_spans
 from .security import set_class
 from .util import utcnow
@@ -45,10 +46,11 @@ def _step(text: str) -> None:
 def run_demo(out_dir: Path, samples_dir=None, keep: bool = False) -> int:
     samples = Path(samples_dir or SAMPLES)
     export_v1 = samples / "chatgpt_export" / "conversations.json"
+    export_files = samples / "chatgpt_export_with_files"
     export_v2 = samples / "chatgpt_export_v2" / "conversations.json"
     capture = samples / "ui_capture" / "arcs-capture-bundle.json"
     leaky = samples / "bad_capture" / "leaky-bundle.json"
-    for path in (export_v1, export_v2, capture, leaky):
+    for path in (export_v1, export_v2, capture, leaky, export_files):
         if not path.exists():
             raise ArcsError("sample %s is missing; run samples/generate_samples.py" % path)
 
@@ -82,6 +84,27 @@ def run_demo(out_dir: Path, samples_dir=None, keep: bool = False) -> int:
           "not a version)" % archive.scalar("SELECT COUNT(*) FROM conversation_versions"))
     if again.new_count or again.updated_count:
         failures.append("re-ingesting an identical file created new versions")
+
+    _step("the same export as a directory: the files beside conversations.json")
+    with_files = ingest_path(archive, export_files, operator="demo")
+    print("   %d file(s) archived (%d bytes); %d attachment(s) are references only"
+          % (with_files.assets_stored, with_files.assets_bytes,
+             sum(c.files_referenced_only for c in with_files.conversations)))
+    for warning in with_files.warnings:
+        print("   ! %s" % warning)
+    for row in archive.all(
+        "SELECT name, kind, content_present, blob_sha256, export_relpath FROM attachments "
+        "WHERE content_present=1 ORDER BY name"
+    ):
+        print("     held  %-32s %s  (%s)" % (row["name"][:32], row["blob_sha256"][:12],
+                                             row["export_relpath"]))
+    unreferenced = archive.scalar(
+        "SELECT COUNT(*) FROM source_records sr WHERE sr.record_kind='attachment' "
+        "AND sr.record_id NOT IN (SELECT source_record_id FROM attachments "
+        "WHERE source_record_id IS NOT NULL) AND sr.duplicate_of_record_id IS NULL"
+    )
+    print("     %d file(s) in the export matched no message and were archived anyway"
+          % unreferenced)
 
     _step("a later capture with corrections: append, never overwrite")
     later = ingest_path(archive, export_v2, operator="demo",
@@ -145,6 +168,27 @@ def run_demo(out_dir: Path, samples_dir=None, keep: bool = False) -> int:
             failures.append("recovered bytes differ from the original for " + source_id)
     print("\n  %d/%d first-capture conversations recovered byte-for-byte from the archive."
           % (matched, compared))
+
+    attachments = [f for f in manifest["files"] if f.get("kind") == "attachment"]
+    for item in attachments:
+        recovered_bytes = (recovered_dir / item["file"]).read_bytes()
+        relpath = item.get("export_relpath")
+        original = (export_files / relpath) if relpath else None
+        if original is not None and original.is_file():
+            # Came from the export directory: compare against the file on disk.
+            same = recovered_bytes == original.read_bytes()
+            how = "vs the export"
+        else:
+            # Carried inline by a capture: the recorded hash is the reference.
+            same = sha256_bytes(recovered_bytes) == item["sha256"]
+            how = "vs its hash"
+        print("  %s %-38s %6d bytes  %s  %s"
+              % ("identical" if same else "DIFFERENT", item["name"][:38],
+                 item["byte_length"], item["sha256"][:16], how))
+        if not same:
+            failures.append("recovered file differs from the original: " + item["name"])
+    if attachments:
+        print("  %d attachment file(s) recovered from the archive." % len(attachments))
 
     container = [f for f in manifest["files"] if f.get("kind") == "container"]
     whole_file_ok = any(
@@ -308,10 +352,11 @@ def run_demo(out_dir: Path, samples_dir=None, keep: bool = False) -> int:
             include_propositions=(recipient == "Grok"),
         )
         check = evidence.verify_packet(packet.path)
-        print("  %-6s %d conversation(s), %d message(s), %d proposition(s); "
+        print("  %-6s %d conversation(s), %d message(s), %d file(s), %d proposition(s); "
               "%d withheld; checksums %s; read-only %s"
-              % (recipient, packet.conversations, packet.messages, packet.propositions,
-                 len(packet.withheld), "ok" if check["ok"] else "FAILED", check["read_only"]))
+              % (recipient, packet.conversations, packet.messages, packet.attachments,
+                 packet.propositions, len(packet.withheld),
+                 "ok" if check["ok"] else "FAILED", check["read_only"]))
         if not check["ok"]:
             failures.append("packet for %s failed its own checksum verification" % recipient)
         if any(w.get("security_class") == "Sacred" for w in packet.withheld):
@@ -350,6 +395,8 @@ def run_demo(out_dir: Path, samples_dir=None, keep: bool = False) -> int:
         "message versions": archive.scalar("SELECT COUNT(*) FROM message_versions"),
         "source records": archive.scalar("SELECT COUNT(*) FROM source_records"),
         "source blobs": archive.scalar("SELECT COUNT(*) FROM source_blobs"),
+        "attachment files held": archive.scalar(
+            "SELECT COUNT(*) FROM attachments WHERE content_present=1"),
         "propositions": archive.scalar("SELECT COUNT(*) FROM propositions", conn=archive.derived),
         "discovery edges": archive.scalar("SELECT COUNT(*) FROM discovery_edges",
                                           conn=archive.derived),

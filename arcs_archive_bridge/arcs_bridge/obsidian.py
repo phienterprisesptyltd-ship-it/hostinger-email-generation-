@@ -200,13 +200,17 @@ def _conversation_note(archive, row, note_name, visible: bool, include_derived: 
         parts.append(header + "\n\n")
         parts.append((msg["content_text"] or "").rstrip() + "\n\n")
         attachments = archive.all(
-            "SELECT kind, name, source_uri, content_present FROM attachments "
-            "WHERE message_version_id=? ORDER BY attachment_id", (msg["version_id"],)
+            "SELECT kind, name, source_uri, content_present, blob_sha256, mime_type "
+            "FROM attachments WHERE message_version_id=? ORDER BY attachment_id",
+            (msg["version_id"],)
         )
         for att in attachments:
             label = att["name"] or att["source_uri"] or "(unnamed)"
-            parts.append("- %s **%s**%s\n" % (att["kind"], label,
-                                              "" if att["content_present"] else " _(reference only)_"))
+            if att["content_present"]:
+                held = " — file held, `%s`" % (att["blob_sha256"] or "")[:16]
+            else:
+                held = " _(reference only: the file itself is not in the archive)_"
+            parts.append("- %s **%s**%s\n" % (att["kind"], label, held))
         if attachments:
             parts.append("\n")
         parts.append("^m%d\n\n" % msg["seq"])

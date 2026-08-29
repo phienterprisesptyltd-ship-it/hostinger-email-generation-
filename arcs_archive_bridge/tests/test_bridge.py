@@ -37,6 +37,7 @@ from arcs_bridge.errors import (  # noqa: E402
     NetworkBlocked,
     SecurityClassViolation,
 )
+from arcs_bridge.blobstore import BlobStore  # noqa: E402
 from arcs_bridge.hashing import sha256_bytes  # noqa: E402
 from arcs_bridge.ingest import ingest_path  # noqa: E402
 from arcs_bridge.jsonspans import array_spans  # noqa: E402
@@ -45,6 +46,7 @@ from arcs_bridge.security import set_class  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 SAMPLES = ROOT / "samples"
 EXPORT_V1 = SAMPLES / "chatgpt_export" / "conversations.json"
+EXPORT_FILES = SAMPLES / "chatgpt_export_with_files"
 EXPORT_V2 = SAMPLES / "chatgpt_export_v2" / "conversations.json"
 CAPTURE = SAMPLES / "ui_capture" / "arcs-capture-bundle.json"
 LEAKY = SAMPLES / "bad_capture" / "leaky-bundle.json"
@@ -134,6 +136,256 @@ class TestIngestion(ArchiveTestCase):
         kinds = {r["kind"] for r in self.archive.all("SELECT kind FROM attachments")}
         self.assertIn("file", kinds)
         self.assertIn("citation", kinds)
+
+
+class TestAttachmentAcquisition(ArchiveTestCase):
+    """Files that ship with an export are acquired, hashed and recoverable."""
+
+    ingest_on_setup = False
+
+    def setUp(self):
+        super().setUp()
+        self.result = ingest_path(self.archive, EXPORT_FILES, operator="test")
+
+    def _attachment(self, name):
+        return self.archive.one(
+            "SELECT * FROM attachments WHERE name=?", (name,)
+        )
+
+    def test_referenced_files_are_stored_with_their_bytes(self):
+        row = self._attachment("kaiora-ledger-p14.jpg")
+        self.assertEqual(row["content_present"], 1)
+        self.assertTrue(row["blob_sha256"])
+        self.assertEqual(row["export_relpath"], "file-KP1887a-kaiora-ledger-p14.jpg")
+        stored = BlobStore(self.config.blobs_dir).get(row["blob_sha256"])
+        original = (EXPORT_FILES / "file-KP1887a-kaiora-ledger-p14.jpg").read_bytes()
+        self.assertEqual(stored, original)
+
+    def test_every_stored_file_has_its_own_source_record(self):
+        rows = self.archive.all(
+            "SELECT a.name, sr.record_kind, sr.adapter, sr.source_method, sr.extraction_date, "
+            "sr.parent_record_id FROM attachments a "
+            "JOIN source_records sr ON sr.record_id = a.source_record_id "
+            "WHERE a.content_present=1"
+        )
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertEqual(row["record_kind"], "attachment")
+            self.assertEqual(row["source_method"], "official_export")
+            self.assertTrue(row["extraction_date"])
+            self.assertTrue(row["parent_record_id"])
+
+    def test_a_file_no_message_references_is_archived_anyway(self):
+        row = self.archive.one(
+            "SELECT * FROM source_records WHERE source_uri=?",
+            ("dalle-generations/file_0000coastline-sketch.png",),
+        )
+        self.assertIsNotNone(row, "an unreferenced export file was dropped")
+        self.assertEqual(row["record_kind"], "attachment")
+        stored = BlobStore(self.config.blobs_dir).get(row["blob_sha256"])
+        self.assertEqual(
+            stored, (EXPORT_FILES / "dalle-generations" / "file_0000coastline-sketch.png").read_bytes()
+        )
+        self.assertTrue(any("not referenced by any message" in w for w in self.result.warnings))
+
+    def test_export_metadata_files_are_not_treated_as_attachments(self):
+        self.assertIsNone(
+            self.archive.one("SELECT * FROM source_records WHERE source_uri=?", ("user.json",)),
+            "user.json is export metadata, not an attachment",
+        )
+        self.assertEqual(self.result.assets_stored, 3)
+
+    def test_citations_stay_references(self):
+        row = self._attachment("Survey regulations 1878")
+        self.assertEqual(row["kind"], "citation")
+        self.assertEqual(row["content_present"], 0)
+        self.assertIsNone(row["blob_sha256"])
+
+    def test_files_recover_byte_for_byte(self):
+        out = self.tmp / "recovered"
+        manifest = reconstruct.export_originals(self.archive, out)
+        recovered = [f for f in manifest["files"] if f.get("kind") == "attachment"]
+        self.assertEqual(len(recovered), 2)
+        for item in recovered:
+            self.assertTrue(item["verified"])
+            original = EXPORT_FILES / item["export_relpath"]
+            self.assertEqual((out / item["file"]).read_bytes(), original.read_bytes())
+
+    def test_pointing_at_the_json_file_still_finds_its_siblings(self):
+        """The export directory is the container, whichever path you name."""
+        other = Path(tempfile.mkdtemp(prefix="arcs-test-"))
+        try:
+            config = ArchiveConfig(root=other / "archive", operator="test")
+            config.save()
+            with Archive.open(config) as archive:
+                result = ingest_path(archive, EXPORT_FILES / "conversations.json",
+                                     operator="test")
+                self.assertEqual(result.assets_stored, 3)
+        finally:
+            shutil.rmtree(other, ignore_errors=True)
+
+    def test_acquisition_can_be_declined(self):
+        other = Path(tempfile.mkdtemp(prefix="arcs-test-"))
+        try:
+            config = ArchiveConfig(root=other / "archive", operator="test")
+            config.save()
+            with Archive.open(config) as archive:
+                result = ingest_path(archive, EXPORT_FILES, operator="test",
+                                     acquire_files=False)
+                self.assertEqual(result.assets_stored, 0)
+                self.assertEqual(
+                    archive.scalar(
+                        "SELECT COUNT(*) FROM attachments WHERE content_present=1"), 0)
+                # the references themselves are still recorded
+                self.assertGreater(archive.scalar("SELECT COUNT(*) FROM attachments"), 0)
+        finally:
+            shutil.rmtree(other, ignore_errors=True)
+
+    def test_reingesting_the_same_export_directory_changes_nothing(self):
+        blobs = self.archive.scalar("SELECT COUNT(*) FROM source_blobs")
+        again = ingest_path(self.archive, EXPORT_FILES, operator="test")
+        self.assertEqual([c.status for c in again.conversations], ["unchanged"] * 5)
+        self.assertEqual(self.archive.scalar("SELECT COUNT(*) FROM source_blobs"), blobs,
+                         "identical files were stored twice")
+        self.assertEqual(
+            self.archive.scalar(
+                "SELECT COUNT(*) FROM source_records WHERE record_kind='attachment' "
+                "AND duplicate_of_record_id IS NOT NULL"),
+            3, "the second sighting of each file lost its provenance record")
+
+    def test_acquiring_files_later_appends_a_version(self):
+        """Ingest without files first, then with: the archive gains, never loses."""
+        other = Path(tempfile.mkdtemp(prefix="arcs-test-"))
+        try:
+            config = ArchiveConfig(root=other / "archive", operator="test")
+            config.save()
+            with Archive.open(config) as archive:
+                ingest_path(archive, EXPORT_V1, operator="test")
+                self.assertEqual(
+                    archive.scalar(
+                        "SELECT COUNT(*) FROM attachments WHERE content_present=1"), 0)
+                ingest_path(archive, EXPORT_FILES, operator="test",
+                            correction_reason="files acquired from the export directory")
+                ledger = archive.one(
+                    "SELECT conversation_id FROM conversations WHERE source_conversation_id=?",
+                    ("arcs-0001-ledger",))
+                versions = archive.all(
+                    "SELECT version_no, is_current FROM conversation_versions "
+                    "WHERE conversation_id=? ORDER BY version_no",
+                    (ledger["conversation_id"],))
+                self.assertEqual(len(versions), 2)
+                self.assertEqual(versions[0]["is_current"], 0)
+                self.assertGreater(
+                    archive.scalar(
+                        "SELECT COUNT(*) FROM attachments WHERE content_present=1"), 0)
+                report = integrity.run(archive, "full")
+                self.assertTrue(report.passed, [c.name for c in report.failed])
+        finally:
+            shutil.rmtree(other, ignore_errors=True)
+
+    def test_a_fileless_recapture_does_not_lose_files_the_archive_holds(self):
+        """A later capture without bytes must not make the archive claim it has none."""
+        ingest_path(self.archive, EXPORT_V2, operator="test")   # same conversations, no files
+        rows = self.archive.all(
+            "SELECT a.name, a.content_present, a.blob_sha256, a.metadata_json "
+            "FROM attachments a JOIN message_versions mv ON mv.version_id = a.message_version_id "
+            "WHERE mv.is_current=1 AND a.kind='file' ORDER BY a.name"
+        )
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertEqual(row["content_present"], 1,
+                             "%s lost its file on a fileless recapture" % row["name"])
+            self.assertIn("linked_from_earlier_capture", row["metadata_json"])
+            BlobStore(self.config.blobs_dir).get(row["blob_sha256"])  # raises if absent
+        self.assertTrue(integrity.run(self.archive, "full").passed)
+
+    def test_carrying_a_file_forward_invents_nothing(self):
+        """Only bytes the archive already holds are re-linked, never new ones."""
+        other = Path(tempfile.mkdtemp(prefix="arcs-test-"))
+        try:
+            config = ArchiveConfig(root=other / "archive", operator="test")
+            config.save()
+            with Archive.open(config) as archive:
+                # This archive has never seen the files, so there is nothing to
+                # carry forward and the attachments stay references.
+                ingest_path(archive, EXPORT_V1, operator="test")
+                ingest_path(archive, EXPORT_V2, operator="test")
+                self.assertEqual(
+                    archive.scalar(
+                        "SELECT COUNT(*) FROM attachments WHERE content_present=1"), 0)
+        finally:
+            shutil.rmtree(other, ignore_errors=True)
+
+    def test_integrity_covers_stored_files(self):
+        report = integrity.run(self.archive, "full")
+        self.assertTrue(report.passed, [c.name for c in report.failed])
+        names = [c.name for c in report.checks]
+        self.assertIn("attachment_blobs_present", names)
+        self.assertIn("attachment_files_have_provenance", names)
+
+    def test_packets_carry_the_files_with_their_hashes(self):
+        integrity.run(self.archive, "full")
+        packet = evidence.build_packet(self.archive, recipient="Grace", max_class="Normal")
+        self.assertEqual(packet.attachments, 2)
+        rows = [
+            json.loads(line) for line in
+            (Path(packet.path) / "data" / "attachments.jsonl")
+            .read_text(encoding="utf-8").splitlines()
+        ]
+        included = [r for r in rows if r["content_present"]]
+        self.assertEqual(len(included), 2)
+        for row in included:
+            data = (Path(packet.path) / row["file"]).read_bytes()
+            self.assertEqual(sha256_bytes(data), row["sha256"])
+            self.assertEqual(data, (EXPORT_FILES / Path(row["file"]).name).read_bytes())
+        self.assertTrue(evidence.verify_packet(packet.path)["ok"])
+
+
+class TestInlineCaptureFiles(ArchiveTestCase):
+    """A capture bundle may carry file bytes inline; they are archived too."""
+
+    ingest_on_setup = False
+
+    def setUp(self):
+        super().setUp()
+        self.result = ingest_path(self.archive, CAPTURE, operator="test")
+
+    def test_inline_base64_attachment_is_stored(self):
+        row = self.archive.one(
+            "SELECT * FROM attachments WHERE name=?", ("kaiora-stumps-2026-08-02.png",))
+        self.assertIsNotNone(row)
+        self.assertEqual(row["content_present"], 1)
+        stored = BlobStore(self.config.blobs_dir).get(row["blob_sha256"])
+        self.assertTrue(stored.startswith(b"\x89PNG"))
+        self.assertEqual(row["byte_size"], len(stored))
+
+    def test_inline_file_gets_its_own_source_record(self):
+        row = self.archive.one(
+            "SELECT sr.* FROM attachments a JOIN source_records sr "
+            "ON sr.record_id = a.source_record_id WHERE a.name=?",
+            ("kaiora-stumps-2026-08-02.png",))
+        self.assertEqual(row["record_kind"], "attachment")
+        self.assertEqual(row["source_method"], "ui_assisted_capture")
+        self.assertTrue(row["extraction_date"])
+
+    def test_cross_origin_attachment_stays_a_reference(self):
+        row = self.archive.one("SELECT * FROM attachments WHERE name=?",
+                               ("offsite-scan.tif",))
+        self.assertIsNotNone(row)
+        self.assertEqual(row["content_present"], 0)
+        self.assertIsNone(row["blob_sha256"])
+
+    def test_base64_is_not_retained_twice_in_the_normalised_metadata(self):
+        """The bytes live in the blob store; metadata keeps the description."""
+        row = self.archive.one(
+            "SELECT metadata_json FROM attachments WHERE name=?",
+            ("kaiora-stumps-2026-08-02.png",))
+        self.assertNotIn("content_base64", row["metadata_json"])
+
+    def test_the_bundle_itself_still_reconstructs(self):
+        for report in reconstruct.verify_all(self.archive, include_history=True):
+            self.assertTrue(report.ok, report.differences[:3] or report.error)
+        self.assertTrue(integrity.run(self.archive, "full").passed)
 
 
 class TestDeduplication(ArchiveTestCase):
@@ -418,6 +670,16 @@ class TestCaptureScript(unittest.TestCase):
         for match in re.findall(r"fetch\(\s*[\"'`]([^\"'`]+)", self.source):
             self.assertTrue(match.startswith("/"),
                             "the capture script must only fetch same-origin paths: " + match)
+
+    def test_script_never_sends_credentials_cross_origin(self):
+        modes = set(re.findall(r"credentials\s*:\s*[\"']([a-z-]+)[\"']", self.source))
+        self.assertTrue(modes)
+        self.assertEqual(modes, {"same-origin"},
+                         "credentials must never be sent to another origin")
+
+    def test_asset_fetching_is_guarded_by_a_same_origin_check(self):
+        self.assertIn("function sameOrigin", self.source)
+        self.assertIn("if (!sameOrigin(url))", self.source)
 
     def test_script_scrubs_credential_shaped_fields(self):
         self.assertIn("FORBIDDEN_KEYS", self.source)

@@ -341,6 +341,43 @@ def export_originals(archive, out_dir, conversation_ids=None, include_history: b
             }
         )
 
+    # Attachments: the files themselves, under the name the source gave them.
+    seen_files = set()
+    for row in archive.all(
+        "SELECT a.name, a.blob_sha256, a.export_relpath, a.mime_type, a.conversation_id, "
+        "c.source_conversation_id, sr.source_method, sr.extraction_date "
+        "FROM attachments a "
+        "JOIN conversations c ON c.conversation_id = a.conversation_id "
+        "LEFT JOIN source_records sr ON sr.record_id = a.source_record_id "
+        "WHERE a.content_present=1 GROUP BY a.blob_sha256, a.name "
+        "ORDER BY c.source_conversation_id, a.name"
+    ):
+        data = store.get(row["blob_sha256"])
+        name = row["export_relpath"] or row["name"] or (row["blob_sha256"][:16] + ".bin")
+        target = out_dir / "attachments" / row["source_conversation_id"] / Path(name).name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        rel = target.relative_to(out_dir).as_posix()
+        if rel in seen_files:
+            continue
+        seen_files.add(rel)
+        manifest["files"].append(
+            {
+                "file": rel,
+                "kind": "attachment",
+                "name": row["name"],
+                "mime_type": row["mime_type"],
+                "conversation_id": row["conversation_id"],
+                "source_conversation_id": row["source_conversation_id"],
+                "sha256": row["blob_sha256"],
+                "byte_length": len(data),
+                "export_relpath": row["export_relpath"],
+                "source_method": row["source_method"],
+                "extraction_date": row["extraction_date"],
+                "verified": sha256_bytes(data) == row["blob_sha256"],
+            }
+        )
+
     (out_dir / "RECOVERY-MANIFEST.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )

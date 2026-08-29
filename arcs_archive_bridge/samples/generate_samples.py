@@ -13,10 +13,14 @@ Outputs (all deterministic):
 * ``samples/ui_capture/arcs-capture-bundle.json``    - UI-assisted capture bundle
 * ``samples/bad_capture/leaky-bundle.json``          - a bundle carrying a session
   cookie, used to prove ingestion fails closed
+* ``samples/chatgpt_export_with_files/``            - the same first capture as a
+  real export *directory*: conversations.json plus the attachment files that
+  ship beside it, including one file no message references
 """
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -100,8 +104,12 @@ C1 = linear(
          "1887”. Below it there are three columns: chain, bearing, remarks. The "
          "first row says 12 chains, N 47° E, “to the karaka stand”. What "
          "would 'chains' mean here?",
-         {"attachments": [{"id": "file-KP1887a", "name": "kaiora-ledger-p14.jpg",
-                           "size": 2841204, "mime_type": "image/jpeg"}]}),
+         {"attachments": [
+             {"id": "file-KP1887a", "name": "kaiora-ledger-p14.jpg",
+              "size": 2841204, "mime_type": "image/jpeg"},
+             {"id": "file-KP1887b", "name": "ledger-p14-transcription.txt",
+              "size": 412, "mime_type": "text/plain"},
+         ]}),
         ("assistant",
          "A chain is a surveyor's unit of 66 feet (20.1168 m), so 12 chains is 792 feet "
          "or about 241.4 metres. A bearing of N 47° E is measured clockwise from "
@@ -305,6 +313,15 @@ def _ui_bundle():
                              "remain at what I make to be 241 m from the ledger's start peg.",
                      "timestamp": "2026-08-02T04:11:00Z"},
                     {"order": 2, "role": "assistant",
+                     "attachments": [
+                         {"kind": "file", "name": "kaiora-stumps-2026-08-02.png",
+                          "mime_type": "image/png",
+                          "content_base64": base64.b64encode(PNG_1PX).decode("ascii"),
+                          "url": "https://chatgpt.com/backend-api/files/file-STUMP1"},
+                         {"kind": "file", "name": "offsite-scan.tif",
+                          "url": "https://cdn.example.invalid/offsite-scan.tif",
+                          "note": "not same-origin; recorded as a reference, not fetched"},
+                     ],
                      "text": "Two stumps at 241 m is a close match for the ledger's 12 chains "
                              "(241.4 m), which supports the karaka stand as the monument the "
                              "1887 line actually ran to. Photograph both stumps with a scale "
@@ -323,6 +340,57 @@ def _leaky_bundle():
     return bundle
 
 
+# A 1x1 PNG and a 1x1 JPEG, written byte-for-byte so the fixture needs no
+# imaging library and hashes identically on every machine.
+PNG_1PX = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000a49444154789c6360000002000100ffff03000006000557bfabd4000000"
+    "0049454e44ae426082"
+)
+JPEG_1PX = bytes.fromhex(
+    "ffd8ffe000104a46494600010100000100010000ffdb004300ffffffffffffffff"
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc2000b08"
+    "0001000101011100ffc40014000100000000000000000000000000000009ffda00"
+    "08010100000010ffd9"
+)
+
+LEDGER_NOTE = (
+    "Kaiora Point survey ledger, page 14 - transcription notes\n"
+    "=======================================================\n\n"
+    "Row 1: 12 ch | N 47 E | to the karaka stand\n"
+    "Row 2: 8 ch 50 lk | (bearing illegible) | to the old pa fence line\n"
+    "Row 3: (torn)\n\n"
+    "Margin date: 16 March 1887. Ink differs from the heading; possibly a\n"
+    "later hand.\n"
+).encode("utf-8")
+
+
+def _export_with_files(directory: Path) -> list:
+    """The first capture as a real export directory, files and all."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "dalle-generations").mkdir(exist_ok=True)
+    written = [write(directory / "conversations.json", CONVERSATIONS)]
+
+    files = {
+        # matches C1's attachment id file-KP1887a
+        "file-KP1887a-kaiora-ledger-p14.jpg": JPEG_1PX,
+        # a transcription note the researcher added to the same conversation
+        "file-KP1887b-ledger-p14-transcription.txt": LEDGER_NOTE,
+        # an image generation, referenced by no message in this fixture:
+        # the archive must keep it anyway
+        "dalle-generations/file_0000coastline-sketch.png": PNG_1PX,
+        # export metadata, which is NOT an attachment and must be skipped
+        "user.json": b'{"id": "user-demo", "email": "demo@example.invalid"}\n',
+    }
+    for name, data in files.items():
+        target = directory / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        written.append(target)
+    return written
+
+
 def write(path: Path, obj) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -335,7 +403,7 @@ def main() -> None:
         write(HERE / "chatgpt_export_v2" / "conversations.json", _v2()),
         write(HERE / "ui_capture" / "arcs-capture-bundle.json", _ui_bundle()),
         write(HERE / "bad_capture" / "leaky-bundle.json", _leaky_bundle()),
-    ]
+    ] + _export_with_files(HERE / "chatgpt_export_with_files")
     for path in outputs:
         print("%8d bytes  %s" % (path.stat().st_size, path.relative_to(HERE.parent)))
 

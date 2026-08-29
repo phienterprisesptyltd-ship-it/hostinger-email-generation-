@@ -196,6 +196,9 @@ CREATE TABLE IF NOT EXISTS attachments (
     source_file_id     TEXT,
     blob_sha256        TEXT REFERENCES source_blobs(sha256),  -- NULL when content was not captured
     content_present    INTEGER NOT NULL DEFAULT 0,
+    -- The append-only source record for the file's own bytes, when acquired.
+    source_record_id   TEXT REFERENCES source_records(record_id),
+    export_relpath     TEXT,   -- where the file sat inside the export container
     metadata_json      TEXT NOT NULL DEFAULT '{}',
     created_at         TEXT NOT NULL
 );

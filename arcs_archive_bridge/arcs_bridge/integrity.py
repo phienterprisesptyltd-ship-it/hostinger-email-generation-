@@ -254,9 +254,23 @@ def check_attachments(archive) -> list:
             "WHERE a.content_present=1 AND b.sha256 IS NULL"
         )
     ]
+    unprovenanced = [
+        r["attachment_id"] for r in archive.all(
+            "SELECT a.attachment_id FROM attachments a "
+            "LEFT JOIN source_records sr ON sr.record_id = a.source_record_id "
+            "WHERE a.content_present=1 AND sr.record_id IS NULL"
+        )
+    ]
     total = archive.scalar("SELECT COUNT(*) FROM attachments") or 0
-    return [Check("attachment_blobs_present", not missing,
-                  "attachments claiming stored content have it", missing[:20], total)]
+    stored = archive.scalar("SELECT COUNT(*) FROM attachments WHERE content_present=1") or 0
+    return [
+        Check("attachment_blobs_present", not missing,
+              "%d of %d attachment(s) have their bytes stored; the rest are "
+              "recorded as references" % (stored, total), missing[:20], total),
+        Check("attachment_files_have_provenance", not unprovenanced,
+              "every stored file has its own append-only source record",
+              unprovenanced[:20], stored),
+    ]
 
 
 def check_search_index(archive) -> list:

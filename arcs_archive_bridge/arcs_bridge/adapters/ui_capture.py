@@ -19,6 +19,8 @@ credential material at the ingestion boundary before a single byte is stored
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 from pathlib import Path
 
@@ -38,19 +40,45 @@ from .chatgpt_export import parse_conversation as parse_export_conversation
 BUNDLE_VERSION = 1
 
 
-def _attachments(entry: dict) -> list:
+def _decode_inline(att: dict, warnings: list):
+    """Bytes carried inline by the capture, if any.
+
+    A capture bundle may include a file as base64 under ``content_base64`` -
+    the browser script does this only for assets it can fetch same-origin with
+    the session the page already has, and never by handling a token.
+    """
+    encoded = att.get("content_base64")
+    if not encoded:
+        return None
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        warnings.append("attachment %r has unreadable content_base64: %s"
+                        % (att.get("name"), exc))
+        return None
+
+
+def _attachments(entry: dict, warnings=None) -> list:
+    warnings = warnings if warnings is not None else []
     out = []
     for i, att in enumerate(entry.get("attachments") or []):
         if isinstance(att, dict):
+            data = _decode_inline(att, warnings)
+            meta = {"index": i, "attachment": {k: v for k, v in att.items()
+                                               if k != "content_base64"}}
+            if data is not None:
+                meta["inline_capture"] = True
+                meta["byte_size"] = len(data)
             out.append(
                 CapturedAttachment(
                     kind=att.get("kind") or "file",
                     name=att.get("name"),
                     mime_type=att.get("mime_type"),
-                    byte_size=att.get("size"),
+                    byte_size=att.get("size") or (len(data) if data else None),
                     source_uri=att.get("url"),
                     source_file_id=att.get("file_id"),
-                    metadata={"index": i, "attachment": att},
+                    data=data,
+                    metadata=meta,
                 )
             )
         elif isinstance(att, str):
@@ -60,7 +88,8 @@ def _attachments(entry: dict) -> list:
 
 
 def parse_dom_conversation(entry: dict, raw_bytes: bytes, byte_start=None,
-                           byte_end=None, verbatim: bool = True) -> CapturedConversation:
+                           byte_end=None, verbatim: bool = True,
+                           warnings=None) -> CapturedConversation:
     """Build a conversation from DOM-scraped messages.
 
     Lower fidelity than a backend payload - the DOM has already rendered
@@ -82,7 +111,7 @@ def parse_dom_conversation(entry: dict, raw_bytes: bytes, byte_start=None,
                 on_canonical_path=True,
                 branch_note=None,
                 metadata={"entry_index": i, "message": msg},
-                attachments=_attachments(msg),
+                attachments=_attachments(msg, warnings),
             )
         )
     envelope = {k: v for k, v in entry.items() if k != "messages"}
@@ -124,11 +153,13 @@ class UICaptureAdapter(ImportAdapter):
         head = path.read_bytes()[:2048].decode("utf-8", "replace")
         return "arcs_capture_version" in head
 
-    def read(self, path: Path) -> ImportPayload:
+    def read(self, path: Path, options=None) -> ImportPayload:
+        options = options or {}
         path = Path(path)
         data = path.read_bytes()
         text = data.decode("utf-8")
         bundle = json.loads(text)
+        acquire_assets = options.get("acquire_assets", True)
         version = bundle.get("arcs_capture_version")
         if version != BUNDLE_VERSION:
             raise ValueError(
@@ -173,7 +204,12 @@ class UICaptureAdapter(ImportAdapter):
             else:
                 if not entry.get("messages"):
                     warnings.append("conversation entry %d has neither payload nor messages" % i)
-                conv = parse_dom_conversation(entry, raw, start, end, verbatim)
+                conv = parse_dom_conversation(entry, raw, start, end, verbatim,
+                                              warnings)
+            if not acquire_assets:
+                for message in conv.messages:
+                    for attachment in message.attachments:
+                        attachment.data = None
             conversations.append(conv)
 
         return ImportPayload(

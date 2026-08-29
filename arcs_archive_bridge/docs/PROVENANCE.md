@@ -17,6 +17,12 @@ For each **capture event** (`source_records`, append-only):
 | `duplicate_of_record_id` | the earlier record with identical bytes, if any |
 | `batch_id` | the import run |
 
+Attachment files get their own records of `record_kind = 'attachment'`, parented
+to the container they arrived in and inheriting its adapter, source method and
+extraction date - because that is where they came from. The `attachments` row
+links to that record, so a file's provenance is a query away from the message
+that carried it.
+
 For each **conversation version**: title, create/update time (normalised *and*
 in the source's original form), model, message count, content hash, source hash,
 the retained original envelope, what it supersedes, and why.
@@ -89,6 +95,28 @@ arcs recover --out ./originals      # write the exact bytes back to disk
 `arcs recover` writes a `RECOVERY-MANIFEST.json` recording, for every file, its
 hash, its adapter, its source method, its extraction date and its byte span in
 the original container - and whether the bytes it just wrote verified.
+Attachments come back too, under `attachments/<conversation>/`, byte-for-byte
+identical to the files that shipped in the export.
+
+Acquiring files for conversations already in the archive is a *correction*, not
+an overwrite: the message fingerprint includes the hash of each attachment's
+bytes, so ingesting an export directory after ingesting only its JSON appends a
+new version. The archive gains; nothing is replaced.
+
+The reverse case needs care. A later capture often carries an attachment's
+metadata but not its bytes - a fileless export, a DOM capture. Left alone, that
+version would supersede the one that had the file and the archive would report
+holding no file while holding it, hashed, in the blob store. So the linkage is
+**carried forward**: a new attachment row re-points at bytes the archive already
+has, matched on the provider's file id (or the filename within the same
+conversation), and records that it did so in
+`metadata_json.linked_from_earlier_capture`.
+
+Two limits keep that honest. It only ever re-links bytes already in the archive -
+an archive that never saw the files still shows references, and a test asserts
+it. And it is deliberately not part of the message fingerprint: what a capture
+actually contained remains the basis of versioning, so re-ingesting the same
+input is still a no-op.
 
 ## Tamper evidence
 

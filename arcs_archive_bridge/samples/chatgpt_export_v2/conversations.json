@@ -39,6 +39,12 @@
                 "name": "kaiora-ledger-p14.jpg",
                 "size": 2841204,
                 "mime_type": "image/jpeg"
+              },
+              {
+                "id": "file-KP1887b",
+                "name": "ledger-p14-transcription.txt",
+                "size": 412,
+                "mime_type": "text/plain"
               }
             ]
           },

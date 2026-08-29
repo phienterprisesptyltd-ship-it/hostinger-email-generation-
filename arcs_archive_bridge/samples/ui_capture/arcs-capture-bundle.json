@@ -169,6 +169,21 @@
         {
           "order": 2,
           "role": "assistant",
+          "attachments": [
+            {
+              "kind": "file",
+              "name": "kaiora-stumps-2026-08-02.png",
+              "mime_type": "image/png",
+              "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVXv6vUAAAAAElFTkSuQmCC",
+              "url": "https://chatgpt.com/backend-api/files/file-STUMP1"
+            },
+            {
+              "kind": "file",
+              "name": "offsite-scan.tif",
+              "url": "https://cdn.example.invalid/offsite-scan.tif",
+              "note": "not same-origin; recorded as a reference, not fetched"
+            }
+          ],
           "text": "Two stumps at 241 m is a close match for the ledger's 12 chains (241.4 m), which supports the karaka stand as the monument the 1887 line actually ran to. Photograph both stumps with a scale and record a GPS fix for each before they decay further.",
           "timestamp": "2026-08-02T04:12:30Z"
         }

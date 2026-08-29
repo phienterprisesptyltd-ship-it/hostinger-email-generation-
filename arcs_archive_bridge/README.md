@@ -35,6 +35,7 @@ No dependencies beyond the Python standard library. Nothing is uploaded, ever.
 | Retains the original representation | The complete original object for every conversation *and* every message is retained, including branches that are off the current path. | `adapters/chatgpt_export.py` |
 | Normalises into SQLite | Conversations, messages, versions, attachments, sightings, classifications. | `schema_source.sql` |
 | Retains title, dates, role, order, exact content, attachments, source method, extraction date | Columns for each, with the original timestamp form kept next to the normalised one. | `schema_source.sql` |
+| Acquires the attachment files themselves | An export directory is ingested whole - `conversations.json` **plus every file beside it** - each stored by hash with its own source record. Files a capture cannot reach are recorded as references and reported, never silently omitted. | `adapters/chatgpt_export.py` |
 | SHA-256 hashes immutable source records | Content-addressed blob store; every source record carries the hash of its exact bytes. | `blobstore.py`, `hashing.py` |
 | Deduplicates without deleting provenance | Identical bytes are stored once; **every capture event still gets its own append-only source record**, and repeat observations are recorded as sightings. | `ingest.py` |
 | Keeps corrections and later versions | Versions append and supersede. Nothing is ever updated in place. | `ingest.py`, `versioning` tests |
@@ -77,13 +78,14 @@ python3 samples/generate_samples.py      # five sample conversations
 ```
 
 The demo ingests five conversations, re-ingests them to show deduplication,
+ingests the same export as a directory to acquire the attachment files,
 ingests a later export to show corrections, ingests a UI-capture bundle,
 refuses a bundle carrying a session cookie, runs the full verification suite,
 and then does the thing everything rests on:
 
-> **it recovers every conversation from the archive and compares it byte-for-byte
-> against the untouched original file** - and separately rebuilds the same
-> material from the normalised database tables alone.
+> **it recovers every conversation and every attachment file from the archive and
+> compares them byte-for-byte against the untouched originals** - and separately
+> rebuilds the same material from the normalised database tables alone.
 
 It then classifies material, searches it, projects it to Obsidian, opens the
 interpretation gate, extracts propositions, builds the discovery graph, and
@@ -96,16 +98,34 @@ Three ways in, in descending order of fidelity. All three normalise to the same
 tables, so you can start with one and move to another without losing anything.
 
 **1. Official ChatGPT data export (recommended).** Settings → Data controls →
-Export data. Unzip and point the bridge at it:
+Export data. Unzip it and point the bridge at **the directory**:
 
 ```
-arcs ingest ~/Downloads/chatgpt-export/conversations.json
+arcs ingest ~/Downloads/chatgpt-export/
 ```
 
 This is the provider's own serialisation, obtained from your own account, with
 no scraping and no credentials. The bridge records the exact byte span each
 conversation occupied inside the file, so it can hand back a single
 conversation verbatim.
+
+The export directory also contains **your attachment files** - uploads as
+`file-<id>-<name>.<ext>`, image generations under `dalle-generations/` - and
+ingesting the directory acquires them: each file is hashed into the blob store,
+gets its own append-only source record, and is linked to the message that
+carried it. A file that matches no message is archived anyway and reported,
+because an export is source material and dropping part of it is the failure this
+archive exists to prevent. Export metadata (`user.json` and friends) is not
+mistaken for an attachment.
+
+Naming `conversations.json` directly works too - its directory is still treated
+as the container. `--no-files` records attachments as references without storing
+them. `arcs files` shows what is held and what is not.
+
+A later capture that carries an attachment's metadata but not its bytes (a
+fileless export, a DOM capture) does not make the archive forget a file it
+holds: the linkage is carried forward to the new version and the fact is
+recorded. It only ever re-links bytes already stored - never invents them.
 
 **2. UI-assisted capture.** For anything not yet in an export. Load
 `browser_capture/arcs-ui-capture.user.js` in Tampermonkey (or paste it into the
@@ -122,6 +142,13 @@ endpoint usually refuses, so the script falls back to reading the rendered page,
 and those captures are marked `fidelity: dom_rendered` rather than being passed
 off as provider data.
 
+It saves attachments it can reach **same-origin** with the session the page
+already has, inline as base64; anything served from another host is recorded as
+a reference rather than fetched, so the script never contacts a third party.
+Inline files cost storage three times over - in the captured bundle, in the
+retained original needed to rebuild it, and as the extracted file - so the export
+directory remains the better path for files.
+
 **3. OpenAI Enterprise Compliance API.** The intended long-term replacement for
 (2). Fetch the export with your own tooling - the archive process is
 network-sealed and must not hold a compliance credential - then:
@@ -137,6 +164,8 @@ arcs status                          # counts, gate state, network state
 arcs list                            # conversations
 arcs show <id> --full                # one conversation
 arcs history <id>                    # versions, corrections, sightings
+arcs files                           # which attachments are held, which are not
+arcs files --missing                 # only the ones not archived
 arcs search "karaka stand"           # full-text
 arcs semantic index && arcs semantic search "how far did the shoreline move"
 arcs classify conversation <id> Sacred --reason "..." --cascade
@@ -211,11 +240,11 @@ rule can supply it. It runs only through the gate.
 python3 -m unittest discover -s tests -t . -v
 ```
 
-70 tests covering ingestion, provenance, deduplication, versioning,
-byte-for-byte reconstruction, tamper detection, the credential boundary, the
-network seal, the capture script's own guarantees, security classes, evidence
-packets, the projection, search, the gate, propositions, extraction, the
-discovery graph and layer separation.
+89 tests covering ingestion, provenance, deduplication, versioning, attachment
+acquisition, byte-for-byte reconstruction, tamper detection, the credential
+boundary, the network seal, the capture script's own guarantees, security
+classes, evidence packets, the projection, search, the gate, propositions,
+extraction, the discovery graph and layer separation.
 
 ## Status
 

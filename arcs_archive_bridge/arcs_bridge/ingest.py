@@ -45,6 +45,8 @@ class ConversationOutcome:
     messages_new: int = 0
     messages_updated: int = 0
     messages_unchanged: int = 0
+    files_stored: int = 0
+    files_referenced_only: int = 0
     verbatim_bytes: bool = True
     security_class: str = "Normal"
     flags: list = field(default_factory=list)
@@ -60,6 +62,9 @@ class IngestResult:
     input_sha256: str
     extraction_date: str
     conversations: list = field(default_factory=list)
+    assets_found: int = 0
+    assets_stored: int = 0
+    assets_bytes: int = 0
     warnings: list = field(default_factory=list)
     refused: bool = False
     refusal_reason: str = ""
@@ -85,6 +90,10 @@ class IngestResult:
             "unchanged": self.unchanged_count,
             "messages_new": sum(c.messages_new for c in self.conversations),
             "messages_updated": sum(c.messages_updated for c in self.conversations),
+            "files_stored": sum(c.files_stored for c in self.conversations),
+            "files_referenced_only": sum(c.files_referenced_only for c in self.conversations),
+            "assets_found": self.assets_found,
+            "assets_stored": self.assets_stored,
         }
         return data
 
@@ -201,13 +210,17 @@ def conversation_fingerprint(conv, message_hashes) -> str:
 # --------------------------------------------------------------------- ingest
 def ingest_path(archive, path, adapter_name=None, operator: str = "", notes: str = "",
                 default_security_class: str = "Normal", correction_reason: str = "",
-                credential_policy: str = "strict") -> IngestResult:
+                credential_policy: str = "strict", acquire_files: bool = True,
+                max_asset_bytes=None) -> IngestResult:
     """Ingest one file (or export directory) into the archive."""
     path = Path(path)
     adapter = (
         adapter_registry.get(adapter_name) if adapter_name else adapter_registry.detect(path)
     )
-    payload = adapter.read(path)
+    options = {"acquire_assets": acquire_files}
+    if max_asset_bytes:
+        options["max_asset_bytes"] = max_asset_bytes
+    payload = adapter.read(path, options)
     default_security_class = parse_class(default_security_class)
 
     batch_id = new_id("batch")
@@ -255,7 +268,8 @@ def ingest_path(archive, path, adapter_name=None, operator: str = "", notes: str
             (batch_id, adapter.name, adapter.version, payload.source_method, started,
              operator or archive.config.operator, "", str(payload.input_path or path),
              input_sha, json.dumps({"credential_policy": credential_policy,
-                                    "default_security_class": default_security_class}), notes),
+                                    "default_security_class": default_security_class,
+                                    "acquire_files": acquire_files}), notes),
         )
 
         # 1. the container, verbatim
@@ -269,12 +283,29 @@ def ingest_path(archive, path, adapter_name=None, operator: str = "", notes: str
             notes=notes,
         )
 
-        # 2. each conversation
+        # 2. the files that shipped with the conversations, archived whole
+        asset_records = {}
+        for asset in payload.assets:
+            asset_blob = store.put(asset.data, asset.media_type)
+            store.register(conn, asset_blob)
+            asset_record_id = _append_source_record(
+                conn, blob=asset_blob, batch_id=batch_id, adapter=adapter, payload=payload,
+                record_kind="attachment", source_uri=asset.relpath,
+                source_conversation_id=None, parent_record_id=container_record_id,
+                metadata={"relpath": asset.relpath, "file_ids": list(asset.file_ids),
+                          **(asset.metadata or {})},
+            )
+            asset_records[asset.relpath] = (asset_blob, asset_record_id)
+            result.assets_bytes += asset_blob.byte_length
+        result.assets_found = len(payload.assets)
+        result.assets_stored = len(asset_records)
+
+        # 3. each conversation
         for conv in payload.conversations:
             outcome = _ingest_conversation(
                 archive, conn, store, adapter, payload, conv, batch_id,
                 container_record_id, default_security_class, correction_reason,
-                flags.get(conv.source_conversation_id) or [],
+                flags.get(conv.source_conversation_id) or [], asset_records,
             )
             result.conversations.append(outcome)
 
@@ -295,6 +326,9 @@ def ingest_path(archive, path, adapter_name=None, operator: str = "", notes: str
             "new": result.new_count,
             "updated": result.updated_count,
             "unchanged": result.unchanged_count,
+            "assets_found": result.assets_found,
+            "assets_stored": result.assets_stored,
+            "assets_bytes": result.assets_bytes,
         },
         actor=operator,
     )
@@ -326,9 +360,72 @@ def _append_source_record(conn, blob, batch_id, adapter, payload, record_kind,
     return record_id
 
 
+def _carry_forward_attachment(conn, conversation_id, att):
+    """Re-link a file the archive already holds from an earlier capture.
+
+    A later capture of the same conversation often carries the attachment's
+    *metadata* but not its bytes - an export directory has the files, a fileless
+    export or a DOM capture does not.  Superseding the earlier version would
+    otherwise make the current view claim the archive has no file, when it holds
+    it, hashed, with provenance.  So the linkage is carried forward.
+
+    This re-links existing bytes; it never invents any.  The match is on the
+    provider's file id where there is one, falling back to the filename within
+    the same conversation.  It is deliberately not part of the message
+    fingerprint: what a capture contained stays the basis of versioning.
+    """
+    for column, value in (("source_file_id", att.source_file_id), ("name", att.name)):
+        if not value:
+            continue
+        row = conn.execute(
+            "SELECT blob_sha256, source_record_id, export_relpath FROM attachments "
+            "WHERE conversation_id=? AND %s=? AND content_present=1 "
+            "ORDER BY created_at DESC LIMIT 1" % column,
+            (conversation_id, value),
+        ).fetchone()
+        if row is not None:
+            return row["blob_sha256"], row["source_record_id"], row["export_relpath"], column
+    return None, None, None, None
+
+
+def _append_attachment_record(conn, blob, batch_id, parent_record_id, att,
+                              source_conversation_id) -> str:
+    """A source record for a file that arrived inside a capture, not beside it.
+
+    Provenance is inherited from the record that carried it: the same adapter,
+    the same source method, the same extraction date.  The file did not come
+    from anywhere else.
+    """
+    parent = conn.execute(
+        "SELECT adapter, adapter_version, source_method, extraction_date "
+        "FROM source_records WHERE record_id=?", (parent_record_id,)
+    ).fetchone()
+    record_id = new_id("src")
+    prior = conn.execute(
+        "SELECT record_id FROM source_records WHERE blob_sha256=? ORDER BY ingested_at LIMIT 1",
+        (blob.sha256,),
+    ).fetchone()
+    conn.execute(
+        "INSERT INTO source_records(record_id, blob_sha256, batch_id, source_method, adapter, "
+        "adapter_version, record_kind, source_uri, source_conversation_id, extraction_date, "
+        "ingested_at, parent_record_id, byte_start, byte_end, duplicate_of_record_id, "
+        "capture_notes, metadata_json) "
+        "VALUES (?,?,?,?,?,?,'attachment',?,?,?,?,?,NULL,NULL,?,'',?)",
+        (
+            record_id, blob.sha256, batch_id, parent["source_method"], parent["adapter"],
+            parent["adapter_version"], att.source_uri or att.name, source_conversation_id,
+            parent["extraction_date"], utcnow(), parent_record_id,
+            prior["record_id"] if prior else None,
+            json.dumps({"attachment_name": att.name, "carried_inline": True},
+                       ensure_ascii=False, sort_keys=True, default=str),
+        ),
+    )
+    return record_id
+
+
 def _ingest_conversation(archive, conn, store, adapter, payload, conv, batch_id,
                          container_record_id, default_class, correction_reason,
-                         flag_findings) -> ConversationOutcome:
+                         flag_findings, asset_records=None) -> ConversationOutcome:
     now = utcnow()
     conversation_id = stable_id("conversation", conv.source_system, conv.source_conversation_id)
 
@@ -465,10 +562,13 @@ def _ingest_conversation(archive, conn, store, adapter, payload, conv, batch_id,
     )
 
     for msg, msg_hash in zip(conv.messages, msg_hashes):
-        status, mv_id = _ingest_message(
+        status, mv_id, stored, referenced = _ingest_message(
             archive, conn, store, conv, msg, msg_hash, conversation_id, version_id,
             record_id, batch_id, now, correction_reason, security_class,
+            asset_records or {},
         )
+        outcome.files_stored += stored
+        outcome.files_referenced_only += referenced
         conn.execute(
             "INSERT INTO conversation_version_messages(conversation_version_id, "
             "message_version_id, seq) VALUES (?,?,?)",
@@ -491,7 +591,7 @@ def _ingest_conversation(archive, conn, store, adapter, payload, conv, batch_id,
 
 def _ingest_message(archive, conn, store, conv, msg, msg_hash, conversation_id,
                     conv_version_id, record_id, batch_id, now, correction_reason,
-                    conversation_class) -> tuple:
+                    conversation_class, asset_records=None) -> tuple:
     source_message_id = msg.source_message_id or ("seq:%d" % msg.seq)
     message_id = stable_id("message", conversation_id, source_message_id)
 
@@ -517,7 +617,12 @@ def _ingest_message(archive, conn, store, conv, msg, msg_hash, conversation_id,
             "batch_id, observed_at) VALUES (?,?,?,?,?)",
             (new_id("sight"), current["version_id"], record_id, batch_id, now),
         )
-        return "unchanged", current["version_id"]
+        counts = conn.execute(
+            "SELECT COALESCE(SUM(content_present), 0) AS stored, COUNT(*) AS total "
+            "FROM attachments WHERE message_version_id=?", (current["version_id"],)
+        ).fetchone()
+        return ("unchanged", current["version_id"], counts["stored"],
+                counts["total"] - counts["stored"])
 
     version_no = (conn.execute(
         "SELECT COALESCE(MAX(version_no), 0) FROM message_versions WHERE message_id=?",
@@ -556,27 +661,53 @@ def _ingest_message(archive, conn, store, conv, msg, msg_hash, conversation_id,
         (new_id("sight"), version_id, record_id, batch_id, now),
     )
 
+    asset_records = asset_records or {}
+    stored = referenced = 0
     for i, att in enumerate(msg.attachments):
-        blob_sha = None
-        if att.data:
+        blob_sha = attachment_record_id = None
+        relpath = (att.metadata or {}).get("export_relpath")
+        if relpath and relpath in asset_records:
+            # The file was archived with the container; point at that record
+            # rather than storing a second copy of the same bytes.
+            asset_blob, attachment_record_id = asset_records[relpath]
+            blob_sha = asset_blob.sha256
+        elif att.data:
             att_blob = store.put(att.data, att.mime_type or "application/octet-stream")
             store.register(conn, att_blob)
             blob_sha = att_blob.sha256
+            attachment_record_id = _append_attachment_record(
+                conn, att_blob, batch_id, record_id, att, conv.source_conversation_id
+            )
+        elif att.kind != "citation":
+            blob_sha, attachment_record_id, carried_relpath, matched_on = \
+                _carry_forward_attachment(conn, conversation_id, att)
+            if blob_sha:
+                relpath = relpath or carried_relpath
+                att.metadata = dict(att.metadata or {})
+                att.metadata["linked_from_earlier_capture"] = {
+                    "matched_on": matched_on,
+                    "note": "this capture carried no bytes; the archive already held them",
+                }
+        if blob_sha:
+            stored += 1
+        else:
+            referenced += 1
         conn.execute(
             "INSERT INTO attachments(attachment_id, message_version_id, conversation_id, kind, "
             "name, mime_type, byte_size, source_uri, source_file_id, blob_sha256, "
-            "content_present, metadata_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "content_present, source_record_id, export_relpath, metadata_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 stable_id("attachment", version_id, i), version_id, conversation_id, att.kind,
                 att.name, att.mime_type, att.byte_size, att.source_uri, att.source_file_id,
-                blob_sha, 1 if blob_sha else 0,
+                blob_sha, 1 if blob_sha else 0, attachment_record_id, relpath,
                 json.dumps(att.metadata or {}, ensure_ascii=False, sort_keys=True, default=str),
                 now,
             ),
         )
 
     _reindex_message_fts(conn, message_id, version_id, conversation_id, msg, conv.title)
-    return ("new" if current is None else "updated"), version_id
+    return ("new" if current is None else "updated"), version_id, stored, referenced
 
 
 def _reindex_message_fts(conn, message_id, version_id, conversation_id, msg, title) -> None:

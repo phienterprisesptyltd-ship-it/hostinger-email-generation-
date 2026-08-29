@@ -11,6 +11,10 @@ the archive that matter:
 | `chatgpt_export_v2/conversations.json` | a later capture: one conversation continued, one title corrected - versioning and corrections |
 | `ui_capture/arcs-capture-bundle.json` | UI-assisted capture: one conversation with provider JSON, one DOM-only, plus a conversation the export does not contain |
 | `bad_capture/leaky-bundle.json` | a bundle carrying a session cookie - ingestion must refuse it |
+| `chatgpt_export_with_files/` | the first capture as a real export **directory**: `conversations.json` plus attachment files, one image no message references, and a `user.json` that must not be mistaken for an attachment |
+
+The binary fixtures are a 1x1 PNG and a 1x1 JPEG written byte-for-byte in the
+generator, so they need no imaging library and hash identically everywhere.
 
 Regenerate them deterministically:
 

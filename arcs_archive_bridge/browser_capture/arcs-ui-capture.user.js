@@ -19,6 +19,8 @@
  *     request, so the archive never has to hold a credential;
  *   - falls back to reading the rendered conversation out of the DOM when the
  *     backend JSON is not available to an unprivileged page script;
+ *   - saves any attachment it can reach *same-origin* with the session the page
+ *     already has, inline as base64;
  *   - writes one JSON file to your Downloads folder and stops.
  *
  * Refuses:
@@ -28,8 +30,10 @@
  *     /api/auth/session. That is why backend JSON may be unavailable: getting
  *     it would mean handling the token, and a capture that needs a token is
  *     not a capture this archive wants.
- *   - it never sends anything anywhere. There is no upload, no telemetry, no
- *     third-party request. The only output is a file on your own disk.
+ *   - it never sends anything anywhere, and never contacts a third-party host.
+ *     Every request is same-origin, checked by sameOrigin() before it is made,
+ *     so an attachment served from a CDN is recorded as a reference rather than
+ *     fetched. The only output is a file on your own disk.
  *   - it never writes to ChatGPT: no POST, PUT, PATCH or DELETE, no title
  *     edits, no deletions, no archiving. ChatGPT is treated as read-only.
  *
@@ -54,7 +58,69 @@
     "bearer", "auth_token", "api_key", "apikey", "client_secret",
   ]);
 
+  const MAX_INLINE_BYTES = 25 * 1024 * 1024;   // do not build a bundle nobody can open
+
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** True only for URLs on the very origin this page was served from. */
+  function sameOrigin(url) {
+    try {
+      return new URL(url, location.href).origin === location.origin;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function toBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+  }
+
+  /**
+   * Attachments rendered in the page.
+   * Anything not same-origin is recorded by URL only - the archive marks those
+   * "reference only" rather than pretending to hold the file. The complete
+   * copy of your files comes from the official export directory, which the
+   * bridge ingests directly.
+   */
+  async function collectAssets(node, warnings) {
+    const assets = [];
+    const seen = new Set();
+    for (const element of node.querySelectorAll("img[src], a[href][download]")) {
+      const url = element.getAttribute("src") || element.getAttribute("href");
+      if (!url || url.startsWith("data:") || seen.has(url)) continue;
+      seen.add(url);
+      const name = element.getAttribute("alt") || element.getAttribute("download") ||
+                   url.split("/").pop().split("?")[0] || "attachment";
+      const asset = { kind: "file", name: name, url: url };
+      if (!sameOrigin(url)) {
+        asset.note = "not same-origin; recorded as a reference, not fetched";
+        assets.push(asset);
+        continue;
+      }
+      try {
+        const response = await fetch(url, { method: "GET", credentials: "same-origin" });
+        if (!response.ok) throw new Error("status " + response.status);
+        const buffer = await response.arrayBuffer();
+        if (buffer.byteLength > MAX_INLINE_BYTES) {
+          asset.note = "larger than the inline limit; recorded as a reference";
+        } else {
+          asset.content_base64 = toBase64(buffer);
+          asset.size = buffer.byteLength;
+          asset.mime_type = response.headers.get("content-type") || null;
+        }
+      } catch (error) {
+        asset.note = "could not be read: " + error.message;
+        warnings.push("attachment " + name + " not captured: " + error.message);
+      }
+      assets.push(asset);
+    }
+    return assets;
+  }
 
   /** Recursively drop anything credential-shaped before it can be written. */
   function scrub(value, dropped) {
@@ -99,20 +165,24 @@
    * and metadata is gone - so the bundle records that, and the archive marks
    * these captures `fidelity: dom_rendered` rather than pretending otherwise.
    */
-  function scrapeDom() {
+  async function scrapeDom(warnings) {
     const nodes = document.querySelectorAll("[data-message-author-role]");
     const messages = [];
-    nodes.forEach((node, index) => {
+    let index = 0;
+    for (const node of nodes) {
       const text = (node.innerText || "").trim();
-      if (!text) return;
+      const attachments = await collectAssets(node, warnings);
+      index += 1;
+      if (!text && attachments.length === 0) continue;
       messages.push({
-        order: index + 1,
+        order: index,
         role: node.getAttribute("data-message-author-role") || "unknown",
         message_id: node.getAttribute("data-message-id") || null,
         text: text,
+        attachments: attachments,
         captured_from: "dom",
       });
-    });
+    }
     return messages;
   }
 
@@ -139,13 +209,16 @@
       const payload = await getJson("/backend-api/conversation/" + conversationId);
       entry.payload = scrub(payload, dropped);
       entry.capture_method = "backend_json";
+      // Even with the provider's JSON, the file bytes are not in it; take what
+      // the rendered page can give us same-origin.
+      entry.messages = await scrapeDom(warnings);
       entry.title = entry.title || payload.title || null;
     } catch (error) {
       warnings.push(
         "backend JSON unavailable for " + conversationId + " (" + error.message +
         "); fell back to reading the rendered page"
       );
-      entry.messages = scrapeDom();
+      entry.messages = await scrapeDom(warnings);
       entry.notes = "DOM capture: markdown already rendered, message metadata not available.";
     }
     return entry;

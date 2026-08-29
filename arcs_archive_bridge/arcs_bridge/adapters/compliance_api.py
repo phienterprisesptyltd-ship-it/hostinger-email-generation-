@@ -60,7 +60,8 @@ class ComplianceApiAdapter(ImportAdapter):
         head = path.read_bytes()[:4096].decode("utf-8", "replace")
         return '"mapping"' in head or '"conversation_id"' in head
 
-    def read(self, path: Path) -> ImportPayload:
+    def read(self, path: Path, options=None) -> ImportPayload:
+        options = options or {}
         path = Path(path)
         data = path.read_bytes()
         text = data.decode("utf-8")

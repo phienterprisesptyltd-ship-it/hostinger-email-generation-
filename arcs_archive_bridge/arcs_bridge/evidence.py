@@ -48,6 +48,8 @@ class PacketResult:
     max_security_class: str
     conversations: int = 0
     messages: int = 0
+    attachments: int = 0
+    attachment_bytes: int = 0
     propositions: int = 0
     withheld: list = field(default_factory=list)
     manifest_sha256: str = ""
@@ -130,7 +132,7 @@ def build_packet(archive, recipient: str, conversation_ids=None, arc=None, query
 
     result = PacketResult(packet_id=packet_id, path=str(root), zip_path="",
                           recipient=recipient, max_security_class=max_class)
-    conv_rows, msg_rows = [], []
+    conv_rows, msg_rows, attachment_rows = [], [], []
 
     for conversation_id in selected:
         row = archive.one(
@@ -222,11 +224,47 @@ def build_packet(archive, recipient: str, conversation_ids=None, arc=None, query
                     "security_class": effective_class(row["security_class"], msg["message_class"]),
                 }
             )
+        # Attachments carried by the messages that made it into the packet.
+        kept_version_ids = {m["version_id"] for m in kept}
+        for att in archive.all(
+            "SELECT * FROM attachments WHERE conversation_id=? ORDER BY name",
+            (conversation_id,),
+        ):
+            if att["message_version_id"] not in kept_version_ids:
+                continue
+            entry = {
+                "conversation_id": conversation_id,
+                "message_version_id": att["message_version_id"],
+                "kind": att["kind"],
+                "name": att["name"],
+                "mime_type": att["mime_type"],
+                "byte_size_claimed_by_source": att["byte_size"],
+                "source_uri": att["source_uri"],
+                "source_file_id": att["source_file_id"],
+                "content_present": bool(att["content_present"]),
+                "sha256": att["blob_sha256"],
+                "file": None,
+            }
+            if att["content_present"] and att["blob_sha256"]:
+                blob = store.get(att["blob_sha256"])
+                filename = Path(att["export_relpath"] or att["name"]
+                                or (att["blob_sha256"][:16] + ".bin")).name
+                target = root / "source" / "attachments" / name / filename
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(blob)
+                _freeze(target)
+                entry["file"] = target.relative_to(root).as_posix()
+                entry["byte_size_stored"] = len(blob)
+                result.attachments += 1
+                result.attachment_bytes += len(blob)
+            attachment_rows.append(entry)
+
         result.conversations += 1
         result.messages += len(kept)
 
     _write_jsonl(root / "data" / "conversations.jsonl", conv_rows)
     _write_jsonl(root / "data" / "messages.jsonl", msg_rows)
+    _write_jsonl(root / "data" / "attachments.jsonl", attachment_rows)
 
     if include_propositions:
         (root / "derived").mkdir(exist_ok=True)
@@ -272,10 +310,17 @@ def build_packet(archive, recipient: str, conversation_ids=None, arc=None, query
         "counts": {
             "conversations": result.conversations,
             "messages": result.messages,
+            "attachments": len(attachment_rows),
+            "attachment_files_included": result.attachments,
+            "attachment_bytes": result.attachment_bytes,
             "propositions": result.propositions,
         },
         "contents": {
             "source/": "exact original bytes, one file per conversation (authoritative)",
+            "source/attachments/": (
+                "the files carried by those conversations, byte-for-byte, hashed in "
+                "data/attachments.jsonl"
+            ),
             "readable/": "Markdown transcripts rendered from the archive (convenience)",
             "data/": "normalised conversation and message rows as JSON Lines",
             "derived/": ("interpretations, kept separate from source"
@@ -388,6 +433,7 @@ def _packet_readme(manifest: dict, result: PacketResult) -> str:
         "## What is in here\n\n"
         "| directory | contents |\n|---|---|\n"
         "| `source/` | the exact original bytes for each conversation - authoritative |\n"
+        "| `source/attachments/` | the files those conversations carried, byte-for-byte |\n"
         "| `readable/` | Markdown transcripts for reading - convenience only |\n"
         "| `data/` | normalised rows as JSON Lines, for analysis |\n"
         "| `derived/` | interpretations, if any were included - never source |\n\n"
@@ -400,13 +446,14 @@ def _packet_readme(manifest: dict, result: PacketResult) -> str:
         "- It is **not complete** unless the manifest says so: %d item(s) were withheld "
         "above the %s class, and each withholding is listed in `MANIFEST.json`.\n"
         "- It carries **no credentials** and no account identifiers.\n\n"
-        "## Counts\n\n- conversations: %d\n- messages: %d\n- propositions: %d\n"
+        "## Counts\n\n- conversations: %d\n- messages: %d\n- attachment files: %d\n"
+        "- propositions: %d\n"
         % (
             manifest["packet_id"], manifest["recipient"], manifest["created_at"],
             manifest["security"]["max_security_class"],
             ("**Purpose:** " + manifest["purpose"]) if manifest["purpose"] else "",
             len(result.withheld), manifest["security"]["max_security_class"],
-            result.conversations, result.messages, result.propositions,
+            result.conversations, result.messages, result.attachments, result.propositions,
         )
     )
 

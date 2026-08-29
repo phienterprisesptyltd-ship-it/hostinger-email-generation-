@@ -17,6 +17,8 @@ Fidelity rules kept here:
 from __future__ import annotations
 
 import json
+import mimetypes
+import re
 from pathlib import Path
 
 from ..hashing import canonical_json
@@ -24,12 +26,22 @@ from ..jsonspans import array_spans
 from ..util import to_iso, utcnow
 from . import register
 from .base import (
+    CapturedAsset,
     CapturedAttachment,
     CapturedConversation,
     CapturedMessage,
     ImportAdapter,
     ImportPayload,
 )
+
+#: Files the export ships that are metadata about the export, not attachments.
+EXPORT_METADATA_FILES = {
+    "conversations.json", "message_feedback.json", "model_comparisons.json",
+    "shared_conversations.json", "user.json", "chat.html", "index.html",
+}
+
+#: Refuse to slurp something pathological into memory without saying so.
+DEFAULT_MAX_ASSET_BYTES = 256 * 1024 * 1024
 
 #: Message roles that carry no user-visible content and are hidden by ChatGPT.
 _HIDDEN_HINT_KEYS = ("is_visually_hidden_from_conversation",)
@@ -69,7 +81,8 @@ def render_content(content) -> tuple:
                         mime_type=part.get("mime_type"),
                         byte_size=part.get("size_bytes") or part.get("size"),
                         source_uri=pointer if isinstance(pointer, str) else None,
-                        source_file_id=part.get("file_id") or part.get("id"),
+                        source_file_id=(part.get("file_id") or part.get("id")
+                                        or pointer_file_id(pointer)),
                         metadata={"part_index": i, "part": part},
                     )
                 )
@@ -131,6 +144,104 @@ def _attachments_from_metadata(meta: dict) -> list:
             )
         )
     return out
+
+
+_FILE_ID = re.compile(r"^(file[-_][A-Za-z0-9]+)")
+
+
+def pointer_file_id(value) -> "str | None":
+    """Extract a provider file id from an asset pointer or attachment id.
+
+    Handles the forms seen in exports: a bare ``file-AbC123``, the older
+    ``file-service://file-AbC123`` and the newer ``sediment://file_0000abcd``.
+    The scheme is stripped first, so ``file-service`` is never mistaken for the
+    identifier it prefixes.
+    """
+    if not isinstance(value, str):
+        return None
+    tail = value.rsplit("//", 1)[-1].strip()
+    match = _FILE_ID.match(tail)
+    return match.group(1) if match else None
+
+
+def asset_file_ids(path: Path) -> set:
+    """The provider ids a file on disk could answer to.
+
+    Exports name attachments ``<file-id>-<original name>.<ext>``, and image
+    generations by id alone, so both shapes are matched - and the full stem is
+    kept as a candidate for anything that names itself differently.
+    """
+    stem = path.stem
+    candidates = {stem}
+    match = re.match(r"^(file[-_][A-Za-z0-9]+)", stem)
+    if match:
+        candidates.add(match.group(1))
+    return {c for c in candidates if c}
+
+
+def index_export_assets(directory: Path, max_bytes: int = DEFAULT_MAX_ASSET_BYTES,
+                        warnings=None):
+    """Every non-metadata file in an export directory, indexed by provider id.
+
+    Returns ``(assets, by_file_id)`` where ``assets`` is every file found - the
+    whole export is archived, whether or not a message references it.
+    """
+    warnings = warnings if warnings is not None else []
+    assets, by_file_id = [], {}
+    if not directory.is_dir():
+        return assets, by_file_id
+    for path in sorted(directory.rglob("*")):
+        if not path.is_file():
+            continue
+        relpath = path.relative_to(directory).as_posix()
+        if path.name in EXPORT_METADATA_FILES and "/" not in relpath:
+            continue
+        size = path.stat().st_size
+        if size > max_bytes:
+            warnings.append(
+                "skipped %s: %d bytes exceeds the %d byte asset limit"
+                % (relpath, size, max_bytes)
+            )
+            continue
+        file_ids = asset_file_ids(path)
+        asset = CapturedAsset(
+            relpath=relpath,
+            data=path.read_bytes(),
+            media_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+            file_ids=tuple(sorted(file_ids)),
+            metadata={"original_filename": path.name, "byte_size": size},
+        )
+        assets.append(asset)
+        for file_id in file_ids:
+            by_file_id.setdefault(file_id, asset)
+    return assets, by_file_id
+
+
+def link_assets(conversation, by_file_id: dict) -> int:
+    """Point a conversation's attachments at the files that shipped with it."""
+    linked = 0
+    for message in conversation.messages:
+        for attachment in message.attachments:
+            if attachment.data is not None:
+                continue
+            keys = [
+                attachment.source_file_id,
+                pointer_file_id(attachment.source_file_id),
+                pointer_file_id(attachment.source_uri),
+            ]
+            asset = next((by_file_id[k] for k in keys if k and k in by_file_id), None)
+            if asset is None:
+                continue
+            attachment.data = asset.data
+            attachment.mime_type = attachment.mime_type or asset.media_type
+            attachment.byte_size = attachment.byte_size or len(asset.data)
+            attachment.metadata["export_relpath"] = asset.relpath
+            attachment.metadata["original_filename"] = asset.metadata.get("original_filename")
+            # The source's own claim about size stays in byte_size; what we
+            # actually hold is recorded beside it so a mismatch is visible.
+            attachment.metadata["stored_byte_size"] = len(asset.data)
+            linked += 1
+    return linked
 
 
 def _walk(mapping: dict, root_ids: list) -> list:
@@ -257,9 +368,14 @@ def parse_conversation(obj: dict, raw_bytes: bytes, byte_start=None, byte_end=No
 
 class ChatGPTExportAdapter(ImportAdapter):
     name = "chatgpt_export"
-    version = "1"
+    #: 2 - acquires the files that ship beside conversations.json.  Bumped
+    #: because it changes what normalisation produces: a re-import of the same
+    #: export now carries attachment bytes, which appends message versions.
+    version = "2"
     source_method = "official_export"
-    description = "Official ChatGPT data export (conversations.json), read verbatim."
+    description = ("Official ChatGPT data export (conversations.json plus the files "
+                   "beside it), read verbatim.")
+
 
     def sniff(self, path: Path) -> bool:
         path = Path(path)
@@ -277,12 +393,24 @@ class ChatGPTExportAdapter(ImportAdapter):
         path = Path(path)
         return path / "conversations.json" if path.is_dir() else path
 
-    def read(self, path: Path) -> ImportPayload:
+    def read(self, path: Path, options=None) -> ImportPayload:
+        options = options or {}
+        acquire_assets = options.get("acquire_assets", True)
+        max_asset_bytes = options.get("max_asset_bytes", DEFAULT_MAX_ASSET_BYTES)
         target = self._resolve(path)
+        # Attachments live beside conversations.json inside the export, so the
+        # directory - not the JSON file - is the real container.
+        asset_root = target.parent
         data = target.read_bytes()
         text = data.decode("utf-8")
         warnings: list = []
         conversations: list = []
+        assets, by_file_id = [], {}
+        if acquire_assets:
+            assets, by_file_id = index_export_assets(
+                asset_root, max_bytes=max_asset_bytes, warnings=warnings
+            )
+
         try:
             spans = array_spans(text, key="conversations")
             for span in spans:
@@ -319,14 +447,38 @@ class ChatGPTExportAdapter(ImportAdapter):
             extraction_date = to_iso(target.stat().st_mtime) or utcnow()
         except OSError:  # pragma: no cover - defensive
             extraction_date = utcnow()
+        linked = sum(link_assets(conv, by_file_id) for conv in conversations)
+        unmatched = sorted(
+            {a.relpath for a in assets}
+            - {
+                att.metadata.get("export_relpath")
+                for conv in conversations for msg in conv.messages
+                for att in msg.attachments
+            }
+        )
+        if unmatched:
+            warnings.append(
+                "%d file(s) in the export are not referenced by any message; "
+                "archived anyway: %s" % (len(unmatched), ", ".join(unmatched[:5])
+                                         + (" …" if len(unmatched) > 5 else ""))
+            )
+
         return ImportPayload(
             container_bytes=data,
             container_media_type="application/json",
             conversations=conversations,
+            assets=assets,
             extraction_date=extraction_date,
             source_method=self.source_method,
             input_path=str(target),
-            metadata={"export_file": target.name, "conversation_count": len(conversations)},
+            metadata={
+                "export_file": target.name,
+                "export_directory": str(asset_root),
+                "conversation_count": len(conversations),
+                "assets_found": len(assets),
+                "assets_linked": linked,
+                "assets_unreferenced": unmatched,
+            },
             warnings=warnings,
         )
 

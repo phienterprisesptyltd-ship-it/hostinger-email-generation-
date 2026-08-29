@@ -93,6 +93,7 @@ def cmd_ingest(args) -> int:
         archive, args.path, adapter_name=args.adapter, operator=args.operator or "",
         notes=args.notes or "", default_security_class=args.security_class,
         correction_reason=args.reason or "", credential_policy=args.credential_policy,
+        acquire_files=not args.no_files,
     )
 
     def show():
@@ -112,9 +113,67 @@ def cmd_ingest(args) -> int:
         print("\n%d conversation(s): %d new, %d updated, %d unchanged"
               % (len(result.conversations), result.new_count, result.updated_count,
                  result.unchanged_count))
+        if result.assets_found or any(c.files_referenced_only for c in result.conversations):
+            print("%d file(s) archived (%s); %d attachment(s) recorded as references only"
+                  % (result.assets_stored, _human_bytes(result.assets_bytes),
+                     sum(c.files_referenced_only for c in result.conversations)))
         print("Run `%s verify` to re-check the archive after ingestion." % PROG)
 
     _emit(args, result.to_dict(), show)
+    return 0
+
+
+def _human_bytes(count) -> str:
+    size = float(count or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return "%.0f %s" % (size, unit) if unit == "B" else "%.1f %s" % (size, unit)
+        size /= 1024
+    return "%d B" % count
+
+
+def cmd_files(args) -> int:
+    """What files the archive holds, and what it only knows about."""
+    archive = _open(args)
+    rows = archive.all(
+        "SELECT a.name, a.kind, a.mime_type, a.byte_size, a.content_present, a.blob_sha256, "
+        "a.export_relpath, a.metadata_json, c.source_conversation_id, cv.title, "
+        "b.byte_length "
+        "FROM attachments a "
+        "JOIN conversations c ON c.conversation_id = a.conversation_id "
+        "LEFT JOIN conversation_versions cv ON cv.conversation_id = c.conversation_id "
+        "     AND cv.is_current = 1 "
+        "LEFT JOIN source_blobs b ON b.sha256 = a.blob_sha256 "
+        "%s ORDER BY c.source_conversation_id, a.name"
+        % ("WHERE a.content_present = 0" if args.missing else "")
+    )
+    data = [dict(r) for r in rows]
+
+    def show():
+        if not data:
+            print("no attachments recorded")
+            return
+        for row in data:
+            held = ("held %8s" % _human_bytes(row["byte_length"])
+                    if row["content_present"] else "not held")
+            print("%-14s %-9s %-42s %s"
+                  % (held, row["kind"], (row["name"] or "(unnamed)")[:42],
+                     (row["title"] or "")[:34]))
+            if row["content_present"]:
+                print("               sha256 %s" % row["blob_sha256"])
+        held_count = sum(1 for r in data if r["content_present"])
+        total_bytes = sum(r["byte_length"] or 0 for r in data if r["content_present"])
+        # A citation is a reference by nature; only real files can be missing.
+        missing_files = [r for r in data
+                         if not r["content_present"] and r["kind"] != "citation"]
+        print("\n%d attachment(s): %d held (%s), %d not held (%d of them files)"
+              % (len(data), held_count, _human_bytes(total_bytes),
+                 len(data) - held_count, len(missing_files)))
+        if missing_files:
+            print("Files are acquired from an official export directory. Ingest the "
+                  "unzipped export folder, not just conversations.json, to pick them up.")
+
+    _emit(args, data, show)
     return 0
 
 
@@ -131,6 +190,8 @@ def cmd_status(args) -> int:
         "duplicate_records": archive.scalar(
             "SELECT COUNT(*) FROM source_records WHERE duplicate_of_record_id IS NOT NULL"),
         "attachments": archive.scalar("SELECT COUNT(*) FROM attachments"),
+        "attachment_files_held": archive.scalar(
+            "SELECT COUNT(*) FROM attachments WHERE content_present=1"),
         "import_batches": archive.scalar("SELECT COUNT(*) FROM import_batches"),
         "evidence_packets": archive.scalar("SELECT COUNT(*) FROM evidence_packets"),
         "propositions": archive.scalar("SELECT COUNT(*) FROM propositions", conn=archive.derived),
@@ -423,8 +484,12 @@ def cmd_packet(args) -> int:
         if result.zip_path:
             print("  zip       : %s" % result.zip_path)
         print("  limit     : %s" % result.max_security_class)
-        print("  contents  : %d conversation(s), %d message(s), %d proposition(s), %d file(s)"
-              % (result.conversations, result.messages, result.propositions, result.files))
+        print("  contents  : %d conversation(s), %d message(s), %d attachment file(s) (%s), "
+              "%d proposition(s)"
+              % (result.conversations, result.messages, result.attachments,
+                 _human_bytes(result.attachment_bytes), result.propositions))
+        print("              %d file(s) in the packet, all listed in CHECKSUMS.sha256"
+              % result.files)
         if result.withheld:
             print("  withheld  : %d item(s) above the class limit (listed in MANIFEST.json)"
                   % len(result.withheld))
@@ -686,7 +751,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--notes", help="free text recorded on the batch")
     p.add_argument("--operator")
     p.add_argument("--credential-policy", default="strict", choices=["strict", "keys-only"])
+    p.add_argument("--no-files", action="store_true",
+                   help="record attachments as references without archiving the files")
     p.set_defaults(func=cmd_ingest)
+
+    p = subparsers.add_parser("files", help="attachments: which files are held, which are not")
+    p.add_argument("--missing", action="store_true", help="only those not archived")
+    p.set_defaults(func=cmd_files)
 
     p = subparsers.add_parser("status", help="archive counts, gate and network state")
     p.set_defaults(func=cmd_status)

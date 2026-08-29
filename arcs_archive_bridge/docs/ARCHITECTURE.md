@@ -44,7 +44,10 @@ succeeded.
    session material fails ingestion closed, before a single byte is stored.
    Secrets *inside conversation content* are a different case - see below.
 3. **Blob store.** The exact bytes are hashed and written read-only. Identical
-   bytes are stored once.
+   bytes are stored once. Files that shipped with the conversations - the
+   attachments beside `conversations.json` in an export - go through the same
+   store and get their own source records, so a photograph is archived on
+   exactly the terms a message is.
 4. **Source record.** One append-only row per capture event, carrying adapter,
    adapter version, source method, source URI, extraction date, ingestion date,
    the byte span inside its container, and a link to the earlier record with the
@@ -69,6 +72,31 @@ better-quality capture of the same conversation simply appends a version.
 | `chatgpt_export` | `official_export` | Provider's own JSON. Byte spans recorded per conversation. |
 | `ui_capture` | `ui_assisted_capture` | Provider JSON where the browser can get it, DOM otherwise (marked as such). |
 | `compliance_api` | `enterprise_compliance_api` | Provider's own JSON, NDJSON or array, per record byte spans. |
+
+### Attachments
+
+An export is a *directory*, not a file: `conversations.json` plus the uploads and
+generated images beside it. The export adapter treats the directory as the
+container and archives every file in it, then links files to messages by
+provider id - matching `file-AbC123` against `file-AbC123-original-name.png`, and
+resolving `file-service://` and `sediment://` asset pointers to the same ids.
+
+Three rules keep that honest:
+
+- **Every file is archived, matched or not.** A file no message references is
+  still source material; it is stored and reported as unreferenced rather than
+  dropped.
+- **Export metadata is not an attachment.** `user.json`, `message_feedback.json`
+  and the rest are the export describing itself, and are skipped.
+- **What is not held says so.** An attachment the capture could not reach keeps
+  its name, type, size and identifier with `content_present = 0`. `arcs files`
+  lists them. The archive never implies it holds a file it does not.
+
+UI capture can also carry file bytes inline as base64, but only for assets it
+can fetch same-origin with the session the page already has. That path stores
+each file three times over - in the captured bundle, in the retained original
+that makes the bundle rebuildable, and as the extracted file - so the export
+directory is the better source for files.
 
 Writing another one means implementing `sniff()` and `read()`, and honouring
 three rules: return the exact source bytes, retain every field you saw, and

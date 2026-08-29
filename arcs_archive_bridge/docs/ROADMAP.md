@@ -11,6 +11,8 @@ This file records what that ruled out, so the boundary stays visible.
 - Append-only source records with full provenance
 - Deduplication that keeps every capture event
 - Lossless normalisation, proven by two independent reconstruction paths
+- Attachment acquisition from an export directory, with per-file hashing,
+  provenance, recovery and inclusion in evidence packets
 - Versioning and corrections that never overwrite
 - 23-check verification suite with tamper-evidence snapshots
 - Security classes enforced on every export path
@@ -37,11 +39,12 @@ person is exactly the kind of judgement that should not be automated before the
 provenance layer is trusted. The facet tables record candidates; nothing merges
 them.
 
-**Attachment content retrieval.** Attachments are recorded - name, type, size,
-identifier, and the message that carried them - but binary content is only
-stored when the capture supplied it. Fetching files from the provider would mean
-authenticated requests, which is what the design refuses. The Compliance API
-path is the right way to get them.
+**Fetching attachments from the provider on demand.** Files are acquired from an
+export directory, and from a UI capture where the browser can reach them
+same-origin. What is *not* built is asking ChatGPT's file endpoint for a file the
+archive knows about but does not hold - that needs an access token, which is what
+the design refuses. `arcs files --missing` lists exactly what falls in that gap;
+a fresh export, or the Compliance API, is how to close it.
 
 **A user interface.** The Obsidian projection is the reading surface on purpose:
 it is a directory of plain Markdown that outlives this program.

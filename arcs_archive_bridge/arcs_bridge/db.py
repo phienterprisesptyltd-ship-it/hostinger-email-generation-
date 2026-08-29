@@ -63,9 +63,27 @@ class Archive:
             self._derived = _connect(self.config.derived_db_path)
         return self._derived
 
+    #: Columns added after the first release.  Applied to existing archives on
+    #: open; adding a column never touches a stored value.
+    MIGRATIONS = (
+        ("attachments", "source_record_id", "TEXT REFERENCES source_records(record_id)"),
+        ("attachments", "export_relpath", "TEXT"),
+    )
+
+    def _migrate(self) -> None:
+        for table, column, decl in self.MIGRATIONS:
+            existing = {
+                row["name"] for row in self.source.execute("PRAGMA table_info(%s)" % table)
+            }
+            if existing and column not in existing:
+                self.source.execute(
+                    "ALTER TABLE %s ADD COLUMN %s %s" % (table, column, decl)
+                )
+
     def init_schema(self) -> None:
         self.source.executescript(SOURCE_SCHEMA.read_text(encoding="utf-8"))
         self.derived.executescript(DERIVED_SCHEMA.read_text(encoding="utf-8"))
+        self._migrate()
         self.set_meta("schema_version", str(self.config.schema_version))
         self.set_meta("archive_name", self.config.archive_name)
         self.source.commit()

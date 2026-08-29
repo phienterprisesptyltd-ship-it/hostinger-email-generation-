@@ -24,6 +24,23 @@ from pathlib import Path
 
 
 @dataclass
+class CapturedAsset:
+    """A file that travelled with the conversations, e.g. inside an export.
+
+    Assets are archived whole and independently of whether any message turned
+    out to reference them: an export directory is source material, and a file
+    the parser could not match to a message is exactly the kind of thing an
+    archive should not quietly drop.
+    """
+
+    relpath: str                 # path inside the container, as the source had it
+    data: bytes
+    media_type: str = "application/octet-stream"
+    file_ids: tuple = ()         # provider identifiers this file answers to
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
 class CapturedAttachment:
     kind: str = "file"          # file | image | audio | link | citation | tool_output
     name: "str | None" = None
@@ -84,6 +101,8 @@ class ImportPayload:
     conversations: list
     extraction_date: str
     source_method: str
+    #: Files that shipped alongside the conversations, archived in full.
+    assets: list = field(default_factory=list)
     input_path: "str | None" = None
     metadata: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)
@@ -108,8 +127,13 @@ class ImportAdapter(abc.ABC):
         """Cheap check: does this input look like something we can read?"""
 
     @abc.abstractmethod
-    def read(self, path: Path) -> ImportPayload:
-        """Parse the input.  Must not mutate it."""
+    def read(self, path: Path, options: "dict | None" = None) -> ImportPayload:
+        """Parse the input.  Must not mutate it.
+
+        ``options`` carries per-call settings from the caller (for example
+        ``acquire_assets``); adapters ignore anything they do not understand,
+        so a new option never breaks an existing adapter.
+        """
 
     def describe(self) -> dict:
         return {
