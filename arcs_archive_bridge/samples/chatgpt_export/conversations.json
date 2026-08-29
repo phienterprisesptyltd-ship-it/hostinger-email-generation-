@@ -1,0 +1,685 @@
+[
+  {
+    "title": "ARCS: Kaiora Point survey ledger, 1887 entries",
+    "create_time": 1719000000.0,
+    "update_time": 1719000188.0,
+    "mapping": {
+      "root-arcs-0001-ledger": {
+        "id": "root-arcs-0001-ledger",
+        "message": null,
+        "parent": null,
+        "children": [
+          "arcs-0001-ledger-n01"
+        ]
+      },
+      "arcs-0001-ledger-n01": {
+        "id": "arcs-0001-ledger-n01",
+        "message": {
+          "id": "arcs-0001-ledger-n01",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719000047.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "I have a photograph of a ledger page from the Kaiora Point survey. The heading reads “Survey of the Kaiora Point reserve, commenced 14 March 1887”. Below it there are three columns: chain, bearing, remarks. The first row says 12 chains, N 47° E, “to the karaka stand”. What would 'chains' mean here?"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {
+            "attachments": [
+              {
+                "id": "file-KP1887a",
+                "name": "kaiora-ledger-p14.jpg",
+                "size": 2841204,
+                "mime_type": "image/jpeg"
+              }
+            ]
+          },
+          "recipient": "all"
+        },
+        "parent": "root-arcs-0001-ledger",
+        "children": [
+          "arcs-0001-ledger-n02"
+        ]
+      },
+      "arcs-0001-ledger-n02": {
+        "id": "arcs-0001-ledger-n02",
+        "message": {
+          "id": "arcs-0001-ledger-n02",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719000094.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "A chain is a surveyor's unit of 66 feet (20.1168 m), so 12 chains is 792 feet or about 241.4 metres. A bearing of N 47° E is measured clockwise from magnetic north unless the ledger states a true-north correction. “To the karaka stand” is a natural monument call: the line was run until it met a stand of karaka trees, which means the boundary was fixed to a living feature rather than a fixed mark."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "model_slug": "gpt-4o"
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0001-ledger-n01",
+        "children": [
+          "arcs-0001-ledger-n03",
+          "arcs-0001-ledger-branch"
+        ]
+      },
+      "arcs-0001-ledger-n03": {
+        "id": "arcs-0001-ledger-n03",
+        "message": {
+          "id": "arcs-0001-ledger-n03",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719000141.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "The second row is harder to read. It looks like '8 ch 50 lk' and the remark is 'to the old pa fence line'. Date in the margin is 16 March 1887."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "arcs-0001-ledger-n02",
+        "children": [
+          "arcs-0001-ledger-n04"
+        ]
+      },
+      "arcs-0001-ledger-n04": {
+        "id": "arcs-0001-ledger-n04",
+        "message": {
+          "id": "arcs-0001-ledger-n04",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719000188.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "8 chains 50 links is 8.5 chains, 561 feet, roughly 171.0 metres (100 links to the chain). The remark places the line at a pa fence — a fortified site boundary — which is significant: in 1887 surveyors frequently recorded pa earthworks as monuments precisely because they were visible and long-standing. If the ledger is the only surviving record of that fence line, it is evidence of the pa's extent at that date."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "model_slug": "gpt-4o",
+            "citations": [
+              {
+                "metadata": {
+                  "title": "Survey regulations 1878",
+                  "url": "https://example.invalid/survey-regs-1878"
+                }
+              }
+            ]
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0001-ledger-n03",
+        "children": []
+      },
+      "arcs-0001-ledger-branch": {
+        "id": "arcs-0001-ledger-branch",
+        "message": {
+          "id": "arcs-0001-ledger-branch",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719000020.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "The second row is hard to read — possibly '8 ch 50 lk'? [edited]"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {
+            "is_edited_branch": true
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0001-ledger-n02",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "arcs-0001-ledger-n04",
+    "plugin_ids": null,
+    "conversation_id": "arcs-0001-ledger",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [],
+    "default_model_slug": "gpt-4o",
+    "id": "arcs-0001-ledger"
+  },
+  {
+    "title": "ARCS: name variants across the 1891 and 1896 rolls",
+    "create_time": 1719086400.0,
+    "update_time": 1719086588.0,
+    "mapping": {
+      "root-arcs-0002-namelist": {
+        "id": "root-arcs-0002-namelist",
+        "message": null,
+        "parent": null,
+        "children": [
+          "arcs-0002-namelist-n01"
+        ]
+      },
+      "arcs-0002-namelist-n01": {
+        "id": "arcs-0002-namelist-n01",
+        "message": {
+          "id": "arcs-0002-namelist-n01",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719086447.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "In the 1891 roll the name is written 'Te Rangi Whakaara'. In the 1896 roll the same holding number 214 is written 'Rangiwhakaara'. Are these the same person?"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "root-arcs-0002-namelist",
+        "children": [
+          "arcs-0002-namelist-n02"
+        ]
+      },
+      "arcs-0002-namelist-n02": {
+        "id": "arcs-0002-namelist-n02",
+        "message": {
+          "id": "arcs-0002-namelist-n02",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719086494.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "The holding number is the strongest link: 214 appearing in both rolls against a name that differs only by the honorific 'Te' and by word division is consistent with one person recorded by two clerks. Word division in Māori names was not standardised in nineteenth-century rolls. Treat it as the same person with moderate confidence, and look for a third source — a burial record or a succession order — before treating it as settled."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "model_slug": "gpt-4o"
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0002-namelist-n01",
+        "children": [
+          "arcs-0002-namelist-n03"
+        ]
+      },
+      "arcs-0002-namelist-n03": {
+        "id": "arcs-0002-namelist-n03",
+        "message": {
+          "id": "arcs-0002-namelist-n03",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719086541.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "There is a succession order dated 3 August 1898 naming 'Rangi Whakaara of Kaiora' as successor to holding 214."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "arcs-0002-namelist-n02",
+        "children": [
+          "arcs-0002-namelist-n04"
+        ]
+      },
+      "arcs-0002-namelist-n04": {
+        "id": "arcs-0002-namelist-n04",
+        "message": {
+          "id": "arcs-0002-namelist-n04",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719086588.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "That closes it. A succession order is a court record tying a named individual to a specific holding, so holding 214 links 'Te Rangi Whakaara' (1891), 'Rangiwhakaara' (1896) and 'Rangi Whakaara of Kaiora' (1898). The 1898 order also gives you a terminus: the original holder had died by 3 August 1898."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "model_slug": "gpt-4o"
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0002-namelist-n03",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "arcs-0002-namelist-n04",
+    "plugin_ids": null,
+    "conversation_id": "arcs-0002-namelist",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [],
+    "default_model_slug": "gpt-4o",
+    "id": "arcs-0002-namelist"
+  },
+  {
+    "title": "ARCS: coastline change at the Kaiora estuary",
+    "create_time": 1719172800.0,
+    "update_time": 1719172988.0,
+    "mapping": {
+      "root-arcs-0003-coast": {
+        "id": "root-arcs-0003-coast",
+        "message": null,
+        "parent": null,
+        "children": [
+          "arcs-0003-coast-n01"
+        ]
+      },
+      "arcs-0003-coast-n01": {
+        "id": "arcs-0003-coast-n01",
+        "message": {
+          "id": "arcs-0003-coast-n01",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719172847.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "The 1887 survey puts the high-water mark 12 chains from the karaka stand. A 1963 aerial photo appears to put it about 180 m away. Has the coast moved?"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "root-arcs-0003-coast",
+        "children": [
+          "arcs-0003-coast-n02"
+        ]
+      },
+      "arcs-0003-coast-n02": {
+        "id": "arcs-0003-coast-n02",
+        "message": {
+          "id": "arcs-0003-coast-n02",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719172894.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "12 chains is 241.4 m, so a 1963 distance of about 180 m implies roughly 61 m of landward movement over 76 years — about 0.8 m per year. That is plausible for an estuarine margin but the comparison carries two large uncertainties: the 1887 'high-water mark' definition may be mean high water springs rather than the modern datum, and the karaka stand itself may not be in the same place. Do not treat 0.8 m/yr as a measurement; treat it as an upper bound pending a control point common to both sources."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "model_slug": "gpt-4o"
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0003-coast-n01",
+        "children": [
+          "arcs-0003-coast-n03"
+        ]
+      },
+      "arcs-0003-coast-n03": {
+        "id": "arcs-0003-coast-n03",
+        "message": {
+          "id": "arcs-0003-coast-n03",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719172941.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "What would count as a common control point?"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "arcs-0003-coast-n02",
+        "children": [
+          "arcs-0003-coast-n04"
+        ]
+      },
+      "arcs-0003-coast-n04": {
+        "id": "arcs-0003-coast-n04",
+        "message": {
+          "id": "arcs-0003-coast-n04",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719172988.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "A trig station, a surveyed road intersection, or a masonry structure visible in both the 1887 ledger and the 1963 photograph. The 1887 ledger's mention of the 'old pa fence line' is not usable as control — it is a natural/earthwork feature that can itself erode."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "model_slug": "gpt-4o"
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0003-coast-n03",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "arcs-0003-coast-n04",
+    "plugin_ids": null,
+    "conversation_id": "arcs-0003-coast",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [],
+    "default_model_slug": "gpt-4o",
+    "id": "arcs-0003-coast"
+  },
+  {
+    "title": "ARCS: method note on provenance and quotation",
+    "create_time": 1719259200.0,
+    "update_time": 1719259388.0,
+    "mapping": {
+      "root-arcs-0004-method": {
+        "id": "root-arcs-0004-method",
+        "message": null,
+        "parent": null,
+        "children": [
+          "arcs-0004-method-n01"
+        ]
+      },
+      "arcs-0004-method-n01": {
+        "id": "arcs-0004-method-n01",
+        "message": {
+          "id": "arcs-0004-method-n01",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719259247.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "Draft me a rule for how I record quotations from primary sources in the ARCS archive."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "root-arcs-0004-method",
+        "children": [
+          "arcs-0004-method-n02"
+        ]
+      },
+      "arcs-0004-method-n02": {
+        "id": "arcs-0004-method-n02",
+        "message": {
+          "id": "arcs-0004-method-n02",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719259294.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "Record four things and never collapse them: (1) the exact quotation, character-for-character, including original spelling; (2) what the words meant to the person who wrote them, at the date they wrote them; (3) what you now think they refer to; and (4) what prompted you to look. Keep (1) and (2) apart from (3) in storage, not just in presentation — if a later interpretation and a contemporaneous meaning live in the same field, the interpretation will eventually be read as the source."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "model_slug": "gpt-4o"
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0004-method-n01",
+        "children": [
+          "arcs-0004-method-n03"
+        ]
+      },
+      "arcs-0004-method-n03": {
+        "id": "arcs-0004-method-n03",
+        "message": {
+          "id": "arcs-0004-method-n03",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719259341.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "Give me the snippet I'd use to hash a source record."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "arcs-0004-method-n02",
+        "children": [
+          "arcs-0004-method-n04"
+        ]
+      },
+      "arcs-0004-method-n04": {
+        "id": "arcs-0004-method-n04",
+        "message": {
+          "id": "arcs-0004-method-n04",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719259388.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "import hashlib\n\ndef source_hash(path):\n    h = hashlib.sha256()\n    with open(path, 'rb') as fh:\n        for chunk in iter(lambda: fh.read(1 << 20), b''):\n            h.update(chunk)\n    return h.hexdigest()"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "model_slug": "gpt-4o"
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0004-method-n03",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "arcs-0004-method-n04",
+    "plugin_ids": null,
+    "conversation_id": "arcs-0004-method",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [],
+    "default_model_slug": "gpt-4o",
+    "id": "arcs-0004-method"
+  },
+  {
+    "title": "ARCS: wāhi tapu locations — handle with care",
+    "create_time": 1719345600.0,
+    "update_time": 1719345694.0,
+    "mapping": {
+      "root-arcs-0005-restricted": {
+        "id": "root-arcs-0005-restricted",
+        "message": null,
+        "parent": null,
+        "children": [
+          "arcs-0005-restricted-n01"
+        ]
+      },
+      "arcs-0005-restricted-n01": {
+        "id": "arcs-0005-restricted-n01",
+        "message": {
+          "id": "arcs-0005-restricted-n01",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719345647.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "I have been given the location of an urupā near the Kaiora estuary by a kaumātua, on the understanding that it is not published. How should the archive hold it?"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "root-arcs-0005-restricted",
+        "children": [
+          "arcs-0005-restricted-n02"
+        ]
+      },
+      "arcs-0005-restricted-n02": {
+        "id": "arcs-0005-restricted-n02",
+        "message": {
+          "id": "arcs-0005-restricted-n02",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1719345694.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "Hold it under your most restricted class and make the restriction a property of the record rather than a note in it, so that any export path has to check the class before it can emit the record. Store the fact that a location was given, the date, and who granted it, separately from the coordinates themselves; that way you can cite the provenance of the knowledge without disclosing the place. An export that cannot express the restriction should refuse to run rather than emit a redacted version that looks complete."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "model_slug": "gpt-4o"
+          },
+          "recipient": "all"
+        },
+        "parent": "arcs-0005-restricted-n01",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "arcs-0005-restricted-n02",
+    "plugin_ids": null,
+    "conversation_id": "arcs-0005-restricted",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [],
+    "default_model_slug": "gpt-4o",
+    "id": "arcs-0005-restricted"
+  }
+]

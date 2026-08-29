@@ -1,0 +1,159 @@
+{
+  "arcs_capture_version": 1,
+  "capture_method": "ui_assisted_readonly",
+  "script_version": "1.0.0",
+  "source_system": "chatgpt",
+  "captured_at": "2026-08-20T09:14:03.000Z",
+  "note": "Captured in a normally signed-in browser. GET requests only; no cookie, token or Authorization header was read, copied or stored.",
+  "conversations": [
+    {
+      "conversation_id": "arcs-0003-coast",
+      "title": "ARCS: coastline change at the Kaiora estuary",
+      "url": "https://chatgpt.com/c/arcs-0003-coast",
+      "captured_at": "2026-08-20T09:14:03.000Z",
+      "capture_method": "backend_json",
+      "payload": {
+        "title": "ARCS: coastline change at the Kaiora estuary",
+        "create_time": 1719172800.0,
+        "update_time": 1719172988.0,
+        "mapping": {
+          "root-arcs-0003-coast": {
+            "id": "root-arcs-0003-coast",
+            "message": null,
+            "parent": null,
+            "children": [
+              "arcs-0003-coast-n01"
+            ]
+          },
+          "arcs-0003-coast-n01": {
+            "id": "arcs-0003-coast-n01",
+            "message": {
+              "id": "arcs-0003-coast-n01",
+              "author": {
+                "role": "user",
+                "name": null,
+                "metadata": {}
+              },
+              "create_time": 1719172847.0,
+              "update_time": null,
+              "content": {
+                "content_type": "text",
+                "parts": [
+                  "The 1887 survey puts the high-water mark 12 chains from the karaka stand. A 1963 aerial photo appears to put it about 180 m away. Has the coast moved?"
+                ]
+              },
+              "status": "finished_successfully",
+              "end_turn": false,
+              "weight": 1.0,
+              "metadata": {},
+              "recipient": "all"
+            },
+            "parent": "root-arcs-0003-coast",
+            "children": [
+              "arcs-0003-coast-n02"
+            ]
+          },
+          "arcs-0003-coast-n02": {
+            "id": "arcs-0003-coast-n02",
+            "message": {
+              "id": "arcs-0003-coast-n02",
+              "author": {
+                "role": "assistant",
+                "name": null,
+                "metadata": {}
+              },
+              "create_time": 1719172894.0,
+              "update_time": null,
+              "content": {
+                "content_type": "text",
+                "parts": [
+                  "12 chains is 241.4 m, so a 1963 distance of about 180 m implies roughly 61 m of landward movement over 76 years — about 0.8 m per year. That is plausible for an estuarine margin but the comparison carries two large uncertainties: the 1887 'high-water mark' definition may be mean high water springs rather than the modern datum, and the karaka stand itself may not be in the same place. Do not treat 0.8 m/yr as a measurement; treat it as an upper bound pending a control point common to both sources."
+                ]
+              },
+              "status": "finished_successfully",
+              "end_turn": true,
+              "weight": 1.0,
+              "metadata": {
+                "model_slug": "gpt-4o"
+              },
+              "recipient": "all"
+            },
+            "parent": "arcs-0003-coast-n01",
+            "children": [
+              "arcs-0003-coast-n03"
+            ]
+          },
+          "arcs-0003-coast-n03": {
+            "id": "arcs-0003-coast-n03",
+            "message": {
+              "id": "arcs-0003-coast-n03",
+              "author": {
+                "role": "user",
+                "name": null,
+                "metadata": {}
+              },
+              "create_time": 1719172941.0,
+              "update_time": null,
+              "content": {
+                "content_type": "text",
+                "parts": [
+                  "What would count as a common control point?"
+                ]
+              },
+              "status": "finished_successfully",
+              "end_turn": false,
+              "weight": 1.0,
+              "metadata": {},
+              "recipient": "all"
+            },
+            "parent": "arcs-0003-coast-n02",
+            "children": [
+              "arcs-0003-coast-n04"
+            ]
+          },
+          "arcs-0003-coast-n04": {
+            "id": "arcs-0003-coast-n04",
+            "message": {
+              "id": "arcs-0003-coast-n04",
+              "author": {
+                "role": "assistant",
+                "name": null,
+                "metadata": {}
+              },
+              "create_time": 1719172988.0,
+              "update_time": null,
+              "content": {
+                "content_type": "text",
+                "parts": [
+                  "A trig station, a surveyed road intersection, or a masonry structure visible in both the 1887 ledger and the 1963 photograph. The 1887 ledger's mention of the 'old pa fence line' is not usable as control — it is a natural/earthwork feature that can itself erode."
+                ]
+              },
+              "status": "finished_successfully",
+              "end_turn": true,
+              "weight": 1.0,
+              "metadata": {
+                "model_slug": "gpt-4o"
+              },
+              "recipient": "all"
+            },
+            "parent": "arcs-0003-coast-n03",
+            "children": []
+          }
+        },
+        "moderation_results": [],
+        "current_node": "arcs-0003-coast-n04",
+        "plugin_ids": null,
+        "conversation_id": "arcs-0003-coast",
+        "conversation_template_id": null,
+        "gizmo_id": null,
+        "is_archived": false,
+        "safe_urls": [],
+        "default_model_slug": "gpt-4o",
+        "id": "arcs-0003-coast"
+      }
+    }
+  ],
+  "session": {
+    "cookie": "__Secure-next-auth.session-token=eyJhbGciOiJIUzI1NiJ9.fake.fake"
+  }
+}

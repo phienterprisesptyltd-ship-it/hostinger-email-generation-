@@ -1,0 +1,20 @@
+# An archive is data, not source. Never commit one.
+arcs-archive/
+arcs-demo/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Recovered originals, evidence packets and projections are all regenerable,
+# and may contain material that should not be in version control.
+recovered/
+originals/
+packets/
+projection/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.coverage

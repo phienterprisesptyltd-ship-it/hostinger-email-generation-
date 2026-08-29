@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arcs-archive-bridge"
+version = "0.1.0"
+description = "A local, privacy-preserving, provenance-complete archive for ChatGPT conversation history and ARCS research."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["archive", "provenance", "chatgpt", "obsidian", "research", "sqlite"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Topic :: Database",
+  "Topic :: Text Processing :: Indexing",
+]
+# No runtime dependencies by design: the archive must keep working, offline,
+# with nothing but a Python interpreter. Optional extras never become required.
+dependencies = []
+
+[project.optional-dependencies]
+semantic = ["sentence-transformers>=2.2"]
+
+[project.scripts]
+arcs = "arcs_bridge.cli:main"
+
+[tool.setuptools]
+packages = ["arcs_bridge", "arcs_bridge.adapters", "arcs_bridge.archaeology"]
+
+[tool.setuptools.package-data]
+arcs_bridge = ["*.sql"]
