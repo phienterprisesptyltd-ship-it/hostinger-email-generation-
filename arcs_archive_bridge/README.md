@@ -10,8 +10,8 @@ hashed first, normalisation is proven lossless, corrections append rather than
 overwrite, and no interpretation may run until the raw layer has been verified.
 
 ```
-arcs init ~/arcs-archive
-arcs ingest ~/Downloads/conversations.json     # or an ARCS capture bundle
+arcs init ~/ARCS-Archive
+arcs ingest ~/Downloads/chatgpt-export/        # the folder, so files come too
 arcs verify                                    # provenance, hashing, recovery, completeness
 arcs recover --out ./originals                 # the exact original bytes, back out
 arcs project                                   # Obsidian vault
@@ -19,6 +19,9 @@ arcs packet --recipient Grace --purpose "independent reading"
 ```
 
 No dependencies beyond the Python standard library. Nothing is uploaded, ever.
+
+**New here? Start with [`docs/QUICKSTART.md`](docs/QUICKSTART.md)** - clone to
+first verified archive, in order, with the ChatGPT export step spelled out.
 
 ---
 
@@ -228,6 +231,7 @@ rule can supply it. It runs only through the gate.
 
 ## Documentation
 
+- [`docs/QUICKSTART.md`](docs/QUICKSTART.md) - how to actually use it, step by step
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - the layers and why they are separate
 - [`docs/PROVENANCE.md`](docs/PROVENANCE.md) - hashing, versions, dedupe, reconstruction
 - [`docs/SECURITY-CLASSES.md`](docs/SECURITY-CLASSES.md) - the four classes and what they gate
